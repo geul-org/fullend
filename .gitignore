@@ -1,0 +1,24 @@
+# Binaries
+/fullend
+*.exe
+
+# Go
+go.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local config
+.clari/
+
+# Claude Code
+.claude/
+CLAUDE.md

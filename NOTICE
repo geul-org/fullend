@@ -1,0 +1,25 @@
+fullend — Full-stack SSOT Orchestrator
+Copyright (c) 2026 Park Junwoo
+
+This project is licensed under the MIT License.
+See the LICENSE file for details.
+
+This software was built with the assistance of Claude (Anthropic).
+All code is human-reviewed and maintained by the copyright holder.
+
+Third-party dependencies:
+
+  github.com/getkin/kin-openapi
+    Licensed under the MIT License
+    Copyright (c) 2017 Aidan Haran
+    https://github.com/getkin/kin-openapi
+
+  github.com/geul-org/ssac
+    Licensed under the MIT License
+    Copyright (c) 2026 Park Junwoo
+    https://github.com/geul-org/ssac
+
+  github.com/geul-org/stml
+    Licensed under the MIT License
+    Copyright (c) 2026 Park Junwoo
+    https://github.com/geul-org/stml
