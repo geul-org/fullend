@@ -106,6 +106,39 @@ Generated tests cover: auth flow, CRUD operations, response schema validation, p
 - [SSaC](https://github.com/geul-org/ssac) — Service Sequences as Code
 - [STML](https://github.com/geul-org/stml) — Semantic Template Markup Language
 
+## Acknowledgments
+
+fullend is built on the shoulders of these projects. Without them, this tool would not exist.
+
+### SSOT Foundations
+
+These projects define the standards that fullend orchestrates. They are the reason fullend can exist as a single-CLI full-stack generator.
+
+- [OpenAPI Initiative](https://www.openapis.org/) — The API description standard that connects frontend and backend
+- [sqlc](https://sqlc.dev/) — SQL-first Go code generation. fullend's DDL-driven model approach is directly inspired by sqlc's philosophy
+- [Open Policy Agent](https://www.openpolicyagent.org/) — Policy as code. OPA's Rego language powers fullend's authorization layer
+- [Mermaid](https://mermaid.js.org/) — Diagram as code. State diagrams become runtime-enforceable state machines
+- [Terraform](https://www.terraform.io/) — Infrastructure as code. The original declarative infrastructure standard
+
+### Code Generation & Validation
+
+- [oapi-codegen](https://github.com/oapi-codegen/oapi-codegen) — OpenAPI to Go server/types code generation
+- [kin-openapi](https://github.com/getkin/kin-openapi) — OpenAPI 3.x parsing and validation in Go
+- [Hurl](https://hurl.dev/) — Plain-text HTTP testing. fullend generates Hurl smoke tests from OpenAPI specs
+
+### Generated Code Runtime
+
+Projects that fullend's generated code depends on at runtime:
+
+- [React](https://react.dev/) — UI library for generated frontend
+- [React Router](https://reactrouter.com/) — Client-side routing
+- [TanStack Query](https://tanstack.com/query) — Data fetching and caching
+- [React Hook Form](https://react-hook-form.com/) — Form state management
+- [Vite](https://vite.dev/) — Frontend build tool
+- [Tailwind CSS](https://tailwindcss.com/) — Utility-first CSS framework
+- [TypeScript](https://www.typescriptlang.org/) — Type-safe JavaScript
+- [lib/pq](https://github.com/lib/pq) — PostgreSQL driver for Go
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
