@@ -10,6 +10,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 
 	"github.com/geul-org/fullend/artifacts/internal/gluegen"
+	"github.com/geul-org/fullend/artifacts/internal/policy"
 	"github.com/geul-org/fullend/artifacts/internal/reporter"
 	"github.com/geul-org/fullend/artifacts/internal/statemachine"
 	ssacgenerator "github.com/geul-org/ssac/generator"
@@ -120,7 +121,12 @@ func GenWith(profile *TargetProfile, specsDir, artifactsDir string) (*reporter.R
 		report.Steps = append(report.Steps, genStateMachines(d.Path, artifactsDir))
 	}
 
-	// 10. terraform fmt (외부 도구, 선택)
+	// 10. OPA Authorizer code generation.
+	if d, ok := has[KindPolicy]; ok {
+		report.Steps = append(report.Steps, genAuthz(d.Path, artifactsDir))
+	}
+
+	// 11. terraform fmt (외부 도구, 선택)
 	if _, ok := has[KindTerraform]; ok {
 		if terraformAvailable {
 			report.Steps = append(report.Steps, genTerraform(specsDir))
@@ -427,6 +433,41 @@ func genStateMachines(statesDir, artifactsDir string) reporter.StepResult {
 	step.Status = reporter.Pass
 	step.Summary = fmt.Sprintf("%d state machines generated", len(diagrams))
 	return step
+}
+
+func genAuthz(policyDir, artifactsDir string) reporter.StepResult {
+	step := reporter.StepResult{Name: "authz-gen"}
+
+	policies, err := policy.ParseDir(policyDir)
+	if err != nil {
+		step.Status = reporter.Fail
+		step.Errors = append(step.Errors, fmt.Sprintf("Policy parse error: %v", err))
+		return step
+	}
+	if len(policies) == 0 {
+		step.Status = reporter.Skip
+		step.Summary = "no policy files"
+		return step
+	}
+
+	modulePath := determineModulePath(artifactsDir)
+	if err := gluegen.GenerateAuthzPackage(policies, artifactsDir, modulePath); err != nil {
+		step.Status = reporter.Fail
+		step.Errors = append(step.Errors, fmt.Sprintf("authz-gen error: %v", err))
+		return step
+	}
+
+	step.Status = reporter.Pass
+	step.Summary = fmt.Sprintf("OPA authorizer generated (%d rules)", countPolicyRules(policies))
+	return step
+}
+
+func countPolicyRules(policies []*policy.Policy) int {
+	total := 0
+	for _, p := range policies {
+		total += len(p.Rules)
+	}
+	return total
 }
 
 func genTerraform(specsDir string) reporter.StepResult {

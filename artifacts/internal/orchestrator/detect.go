@@ -16,6 +16,7 @@ const (
 	KindSTML      SSOTKind = "STML"
 	KindTerraform SSOTKind = "Terraform"
 	KindStates    SSOTKind = "States"
+	KindPolicy    SSOTKind = "Policy"
 )
 
 // DetectedSSOT holds the kind and resolved directory path.
@@ -74,6 +75,12 @@ func DetectSSOTs(root string) ([]DetectedSSOT, error) {
 	statesDir := filepath.Join(abs, "states")
 	if statesMatches, _ := filepath.Glob(filepath.Join(statesDir, "*.md")); len(statesMatches) > 0 {
 		found = append(found, DetectedSSOT{Kind: KindStates, Path: statesDir})
+	}
+
+	// Check for policy/ directory (OPA Rego files).
+	policyDir := filepath.Join(abs, "policy")
+	if policyMatches, _ := filepath.Glob(filepath.Join(policyDir, "*.rego")); len(policyMatches) > 0 {
+		found = append(found, DetectedSSOT{Kind: KindPolicy, Path: policyDir})
 	}
 
 	return found, nil

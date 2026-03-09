@@ -3,6 +3,7 @@ package crosscheck
 import (
 	"github.com/getkin/kin-openapi/openapi3"
 
+	"github.com/geul-org/fullend/artifacts/internal/policy"
 	"github.com/geul-org/fullend/artifacts/internal/statemachine"
 	ssacparser "github.com/geul-org/ssac/parser"
 	ssacvalidator "github.com/geul-org/ssac/validator"
@@ -14,6 +15,7 @@ type CrossValidateInput struct {
 	SymbolTable   *ssacvalidator.SymbolTable
 	ServiceFuncs  []ssacparser.ServiceFunc
 	StateDiagrams []*statemachine.StateDiagram
+	Policies      []*policy.Policy
 }
 
 // Run executes all cross-validation rules and returns collected errors.
@@ -38,6 +40,11 @@ func Run(input *CrossValidateInput) []CrossError {
 	// States ↔ SSaC/DDL/OpenAPI
 	if len(input.StateDiagrams) > 0 {
 		errs = append(errs, CheckStates(input.StateDiagrams, input.ServiceFuncs, input.SymbolTable, input.OpenAPIDoc)...)
+	}
+
+	// Policy ↔ SSaC/DDL/States
+	if len(input.Policies) > 0 {
+		errs = append(errs, CheckPolicy(input.Policies, input.ServiceFuncs, input.SymbolTable, input.StateDiagrams)...)
 	}
 
 	return errs

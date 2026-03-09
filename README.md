@@ -1,6 +1,6 @@
 # fullend
 
-Full-stack SSOT orchestrator — validates consistency across 6 SSOT sources (STML, OpenAPI, SSaC, SQL DDL, Mermaid stateDiagram, Terraform) and generates code from them in a single CLI.
+Full-stack SSOT orchestrator — validates consistency across 7 SSOT sources (STML, OpenAPI, SSaC, SQL DDL, Mermaid stateDiagram, OPA Rego, Terraform) and generates code from them in a single CLI.
 
 ```
 specs/
@@ -9,6 +9,7 @@ specs/
 ├── service/*.go           → SSaC (comment DSL)
 ├── model/*.go             → Go interfaces
 ├── states/*.md            → Mermaid stateDiagram (state transitions)
+├── policy/*.rego          → OPA Rego (authorization policies)
 ├── frontend/*.html        → STML (HTML5 + data-*)
 └── terraform/*.tf         → HCL
 ```
@@ -35,6 +36,7 @@ fullend validate <specs-dir>
 ✓ SSaC         7 service functions
 ✓ STML         4 pages, 6 bindings
 ✓ States       1 diagrams, 3 transitions
+✓ Policy       1 files, 5 rules, 3 ownership mappings
 ✓ Cross        0 mismatches
 
 All SSOT sources are consistent.
@@ -63,6 +65,7 @@ SSOT Status:
   SSaC         service                        7 functions
   STML         frontend                       4 pages
   States       states                         1 diagrams, 3 transitions
+  Policy       policy                         1 files, 5 rules
 ```
 
 ## Cross-Validation
@@ -76,6 +79,9 @@ Individual tools (SSaC, STML) validate within their own layer. fullend catches m
 - **States ↔ SSaC** — transition events match SSaC functions, guard state references valid diagrams
 - **States ↔ DDL** — state fields map to existing DDL columns
 - **States ↔ OpenAPI** — transition events match operationIds
+- **Policy ↔ SSaC** — authorize (action, resource) pairs match Rego allow rules
+- **Policy ↔ DDL** — @ownership table/column references exist in DDL
+- **Policy ↔ States** — state transition events with authorize have matching Rego rules
 - **STML ↔ SSaC** (indirect) — both reference the same OpenAPI operationIds
 
 ## Runtime Testing

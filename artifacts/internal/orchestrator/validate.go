@@ -6,6 +6,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 
 	"github.com/geul-org/fullend/artifacts/internal/crosscheck"
+	"github.com/geul-org/fullend/artifacts/internal/policy"
 	"github.com/geul-org/fullend/artifacts/internal/reporter"
 	"github.com/geul-org/fullend/artifacts/internal/statemachine"
 	ssacparser "github.com/geul-org/ssac/parser"
@@ -15,7 +16,7 @@ import (
 )
 
 // allKinds defines the display order of SSOT kinds.
-var allKinds = []SSOTKind{KindOpenAPI, KindDDL, KindSSaC, KindSTML, KindStates}
+var allKinds = []SSOTKind{KindOpenAPI, KindDDL, KindSSaC, KindSTML, KindStates, KindPolicy}
 
 // Validate runs individual SSOT validations on the detected sources,
 // then runs cross-validation if OpenAPI + DDL + SSaC are all present.
@@ -32,6 +33,7 @@ func Validate(root string, detected []DetectedSSOT) *reporter.Report {
 	var symTable *ssacvalidator.SymbolTable
 	var serviceFuncs []ssacparser.ServiceFunc
 	var stateDiagrams []*statemachine.StateDiagram
+	var parsedPolicies []*policy.Policy
 
 	done := make(map[SSOTKind]bool)
 
@@ -77,16 +79,20 @@ func Validate(root string, detected []DetectedSSOT) *reporter.Report {
 			step, diagrams := validateStates(d.Path)
 			report.Steps = append(report.Steps, step)
 			stateDiagrams = diagrams
+		case KindPolicy:
+			step, policies := validatePolicy(d.Path)
+			report.Steps = append(report.Steps, step)
+			parsedPolicies = policies
 		}
 	}
 
 	// Cross-validation step.
-	report.Steps = append(report.Steps, runCrossValidate(openAPIDoc, symTable, serviceFuncs, stateDiagrams))
+	report.Steps = append(report.Steps, runCrossValidate(openAPIDoc, symTable, serviceFuncs, stateDiagrams, parsedPolicies))
 
 	return report
 }
 
-func runCrossValidate(doc *openapi3.T, st *ssacvalidator.SymbolTable, funcs []ssacparser.ServiceFunc, diagrams []*statemachine.StateDiagram) reporter.StepResult {
+func runCrossValidate(doc *openapi3.T, st *ssacvalidator.SymbolTable, funcs []ssacparser.ServiceFunc, diagrams []*statemachine.StateDiagram, policies []*policy.Policy) reporter.StepResult {
 	step := reporter.StepResult{Name: "Cross"}
 
 	// Require OpenAPI + DDL + SSaC for cross-validation.
@@ -101,6 +107,7 @@ func runCrossValidate(doc *openapi3.T, st *ssacvalidator.SymbolTable, funcs []ss
 		SymbolTable:   st,
 		ServiceFuncs:  funcs,
 		StateDiagrams: diagrams,
+		Policies:      policies,
 	}
 
 	cerrs := crosscheck.Run(input)
@@ -233,6 +240,31 @@ func validateStates(statesDir string) (reporter.StepResult, []*statemachine.Stat
 	step.Status = reporter.Pass
 	step.Summary = fmt.Sprintf("%d diagrams, %d transitions", len(diagrams), totalTransitions)
 	return step, diagrams
+}
+
+func validatePolicy(policyDir string) (reporter.StepResult, []*policy.Policy) {
+	step := reporter.StepResult{Name: string(KindPolicy)}
+	policies, err := policy.ParseDir(policyDir)
+	if err != nil {
+		step.Status = reporter.Fail
+		step.Errors = append(step.Errors, fmt.Sprintf("Policy parse error: %v", err))
+		return step, nil
+	}
+	if len(policies) == 0 {
+		step.Status = reporter.Skip
+		step.Summary = "no policy files found"
+		return step, nil
+	}
+
+	totalRules := 0
+	totalOwnerships := 0
+	for _, p := range policies {
+		totalRules += len(p.Rules)
+		totalOwnerships += len(p.Ownerships)
+	}
+	step.Status = reporter.Pass
+	step.Summary = fmt.Sprintf("%d files, %d rules, %d ownership mappings", len(policies), totalRules, totalOwnerships)
+	return step, policies
 }
 
 func validateSTML(root, frontendDir string) reporter.StepResult {
