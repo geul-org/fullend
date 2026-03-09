@@ -22,12 +22,16 @@ import (
 
 // Gen runs validate first, then generates code from all detected SSOTs.
 // Returns the validate report (with gen steps appended) and whether gen succeeded.
-func Gen(specsDir, artifactsDir string) (*reporter.Report, bool) {
-	return GenWith(DefaultProfile(), specsDir, artifactsDir)
+func Gen(specsDir, artifactsDir string, skipKinds ...map[SSOTKind]bool) (*reporter.Report, bool) {
+	skip := make(map[SSOTKind]bool)
+	if len(skipKinds) > 0 && skipKinds[0] != nil {
+		skip = skipKinds[0]
+	}
+	return GenWith(DefaultProfile(), specsDir, artifactsDir, skip)
 }
 
 // GenWith runs code generation with the specified TargetProfile.
-func GenWith(profile *TargetProfile, specsDir, artifactsDir string) (*reporter.Report, bool) {
+func GenWith(profile *TargetProfile, specsDir, artifactsDir string, skipKinds map[SSOTKind]bool) (*reporter.Report, bool) {
 	detected, err := DetectSSOTs(specsDir)
 	if err != nil {
 		report := &reporter.Report{}
@@ -40,7 +44,7 @@ func GenWith(profile *TargetProfile, specsDir, artifactsDir string) (*reporter.R
 	}
 
 	// 1. Validate first.
-	report := Validate(specsDir, detected)
+	report := Validate(specsDir, detected, skipKinds)
 	if report.HasFailure() {
 		return report, false
 	}

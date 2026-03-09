@@ -1,4 +1,4 @@
-# Phase 022: Gherkin 시나리오 SSOT + Hurl 2단계 생성
+# Phase 023: Gherkin 시나리오 SSOT + Hurl 2단계 생성
 
 ## 목표
 

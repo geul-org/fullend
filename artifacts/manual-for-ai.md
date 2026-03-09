@@ -473,7 +473,15 @@ Generated content:
 ## fullend CLI
 
 ```bash
-fullend validate <specs-dir>                 # Individual validation + cross-validation
-fullend gen <specs-dir> <artifacts-dir>      # validate -> codegen + Hurl tests + state machines + OPA Authorizer
-fullend status <specs-dir>                   # SSOT summary
+fullend validate [--skip kind,...] <specs-dir>                 # Individual validation + cross-validation
+fullend gen      [--skip kind,...] <specs-dir> <artifacts-dir> # validate -> codegen + Hurl tests + state machines + OPA Authorizer
+fullend status   <specs-dir>                                   # SSOT summary
 ```
+
+All 8 SSOTs (OpenAPI, DDL, SSaC, Model, STML, States, Policy, Terraform) are **required by default**. Missing SSOTs cause an ERROR. Use `--skip` to explicitly exclude:
+
+```bash
+fullend validate --skip states,terraform specs/my-project
+```
+
+Skip kinds: `openapi`, `ddl`, `ssac`, `model`, `stml`, `states`, `policy`, `terraform`

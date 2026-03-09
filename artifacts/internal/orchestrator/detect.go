@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // SSOTKind identifies a type of SSOT source.
@@ -84,6 +85,32 @@ func DetectSSOTs(root string) ([]DetectedSSOT, error) {
 	}
 
 	return found, nil
+}
+
+// AllSSOTKinds returns all SSOT kinds that fullend manages.
+func AllSSOTKinds() []SSOTKind {
+	return []SSOTKind{
+		KindOpenAPI, KindDDL, KindSSaC, KindModel,
+		KindSTML, KindStates, KindPolicy, KindTerraform,
+	}
+}
+
+// kindNames maps CLI --skip values to SSOTKind.
+var kindNames = map[string]SSOTKind{
+	"openapi":   KindOpenAPI,
+	"ddl":       KindDDL,
+	"ssac":      KindSSaC,
+	"model":     KindModel,
+	"stml":      KindSTML,
+	"states":    KindStates,
+	"policy":    KindPolicy,
+	"terraform": KindTerraform,
+}
+
+// KindFromString parses a CLI --skip value into a SSOTKind.
+func KindFromString(s string) (SSOTKind, bool) {
+	k, ok := kindNames[strings.ToLower(s)]
+	return k, ok
 }
 
 // NotDirError is returned when the specs path is not a directory.

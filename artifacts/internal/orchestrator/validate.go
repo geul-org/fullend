@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/getkin/kin-openapi/openapi3"
 
@@ -15,13 +16,19 @@ import (
 	stmlvalidator "github.com/geul-org/stml/validator"
 )
 
-// allKinds defines the display order of SSOT kinds.
-var allKinds = []SSOTKind{KindOpenAPI, KindDDL, KindSSaC, KindSTML, KindStates, KindPolicy}
+// allKinds defines the display order of SSOT kinds for validation.
+var allKinds = []SSOTKind{KindOpenAPI, KindDDL, KindSSaC, KindModel, KindSTML, KindStates, KindPolicy, KindTerraform}
 
 // Validate runs individual SSOT validations on the detected sources,
 // then runs cross-validation if OpenAPI + DDL + SSaC are all present.
-func Validate(root string, detected []DetectedSSOT) *reporter.Report {
+// skipKinds specifies SSOT kinds to explicitly skip (via --skip flag).
+func Validate(root string, detected []DetectedSSOT, skipKinds ...map[SSOTKind]bool) *reporter.Report {
 	report := &reporter.Report{}
+
+	skip := make(map[SSOTKind]bool)
+	if len(skipKinds) > 0 && skipKinds[0] != nil {
+		skip = skipKinds[0]
+	}
 
 	has := make(map[SSOTKind]DetectedSSOT)
 	for _, d := range detected {
@@ -37,7 +44,7 @@ func Validate(root string, detected []DetectedSSOT) *reporter.Report {
 
 	done := make(map[SSOTKind]bool)
 
-	// Emit steps in fixed order; skip undetected kinds.
+	// Emit steps in fixed order.
 	for _, kind := range allKinds {
 		if done[kind] {
 			continue
@@ -45,11 +52,19 @@ func Validate(root string, detected []DetectedSSOT) *reporter.Report {
 
 		d, ok := has[kind]
 		if !ok {
-			report.Steps = append(report.Steps, reporter.StepResult{
-				Name:    string(kind),
-				Status:  reporter.Skip,
-				Summary: "not found, skipped",
-			})
+			if skip[kind] {
+				report.Steps = append(report.Steps, reporter.StepResult{
+					Name:    string(kind),
+					Status:  reporter.Skip,
+					Summary: "skipped (--skip)",
+				})
+			} else {
+				report.Steps = append(report.Steps, reporter.StepResult{
+					Name:    string(kind),
+					Status:  reporter.Fail,
+					Summary: "required but not found",
+				})
+			}
 			continue
 		}
 
@@ -83,6 +98,10 @@ func Validate(root string, detected []DetectedSSOT) *reporter.Report {
 			step, policies := validatePolicy(d.Path)
 			report.Steps = append(report.Steps, step)
 			parsedPolicies = policies
+		case KindModel:
+			report.Steps = append(report.Steps, validateModel(d.Path))
+		case KindTerraform:
+			report.Steps = append(report.Steps, validateTerraform(d.Path))
 		}
 	}
 
@@ -265,6 +284,32 @@ func validatePolicy(policyDir string) (reporter.StepResult, []*policy.Policy) {
 	step.Status = reporter.Pass
 	step.Summary = fmt.Sprintf("%d files, %d rules, %d ownership mappings", len(policies), totalRules, totalOwnerships)
 	return step, policies
+}
+
+func validateModel(modelDir string) reporter.StepResult {
+	step := reporter.StepResult{Name: string(KindModel)}
+	matches, _ := filepath.Glob(filepath.Join(modelDir, "*.go"))
+	if len(matches) == 0 {
+		step.Status = reporter.Fail
+		step.Summary = "no model files found"
+		return step
+	}
+	step.Status = reporter.Pass
+	step.Summary = fmt.Sprintf("%d files", len(matches))
+	return step
+}
+
+func validateTerraform(tfDir string) reporter.StepResult {
+	step := reporter.StepResult{Name: string(KindTerraform)}
+	matches, _ := filepath.Glob(filepath.Join(tfDir, "*.tf"))
+	if len(matches) == 0 {
+		step.Status = reporter.Fail
+		step.Summary = "no terraform files found"
+		return step
+	}
+	step.Status = reporter.Pass
+	step.Summary = fmt.Sprintf("%d files", len(matches))
+	return step
 }
 
 func validateSTML(root, frontendDir string) reporter.StepResult {

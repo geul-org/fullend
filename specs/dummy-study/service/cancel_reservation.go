@@ -15,6 +15,9 @@ import "net/http"
 // @sequence guard nil reservation
 // @message "예약을 찾을 수 없습니다"
 
+// @sequence guard state reservation
+// @param reservation.Status
+
 // @sequence call
 // @func calculateRefund
 // @param reservation

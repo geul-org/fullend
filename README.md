@@ -24,30 +24,36 @@ go install github.com/geul-org/fullend/artifacts/cmd/fullend@latest
 
 ### validate
 
-Validates each SSOT individually, then cross-validates consistency between layers.
+Validates each SSOT individually, then cross-validates consistency between layers. All 8 SSOTs are required by default; use `--skip` to exclude specific kinds.
 
 ```bash
 fullend validate <specs-dir>
+fullend validate --skip states,terraform <specs-dir>
 ```
 
 ```
 ✓ OpenAPI      7 endpoints
 ✓ DDL          3 tables, 18 columns
 ✓ SSaC         7 service functions
+✓ Model        3 files
 ✓ STML         4 pages, 6 bindings
 ✓ States       1 diagrams, 3 transitions
 ✓ Policy       1 files, 5 rules, 3 ownership mappings
+✓ Terraform    2 files
 ✓ Cross        0 mismatches
 
 All SSOT sources are consistent.
 ```
 
+Skip kinds: `openapi`, `ddl`, `ssac`, `model`, `stml`, `states`, `policy`, `terraform`
+
 ### gen
 
-Validates first, then generates code from all SSOTs.
+Validates first, then generates code from all SSOTs. Accepts the same `--skip` option.
 
 ```bash
 fullend gen <specs-dir> <artifacts-dir>
+fullend gen --skip terraform <specs-dir> <artifacts-dir>
 ```
 
 ### status
