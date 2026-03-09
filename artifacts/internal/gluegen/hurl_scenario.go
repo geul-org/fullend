@@ -93,11 +93,27 @@ func renderFeatureHurl(f *scenario.Feature, doc *openapi3.T, opMap map[string]op
 		captures := make(map[string]bool)
 		hasToken := false
 
-		for _, step := range steps {
+		idx := 0
+		for idx < len(steps) {
+			step := steps[idx]
 			if step.IsAction {
-				writeActionHurl(&buf, step, opMap, doc, captures, &hasToken)
+				// Look ahead: collect trailing assertions and find status code.
+				statusCode := "200"
+				var trailingAssertions []scenario.Step
+				j := idx + 1
+				for j < len(steps) && !steps[j].IsAction {
+					if steps[j].Assertion.Kind == scenario.AssertStatus {
+						statusCode = steps[j].Assertion.Value
+					} else {
+						trailingAssertions = append(trailingAssertions, steps[j])
+					}
+					j++
+				}
+				writeActionHurlV2(&buf, step, statusCode, trailingAssertions, opMap, doc, captures, &hasToken)
+				idx = j
 			} else {
-				writeAssertionHurl(&buf, step, captures)
+				// Standalone assertion (shouldn't happen normally, but handle gracefully).
+				idx++
 			}
 		}
 	}
@@ -105,7 +121,7 @@ func renderFeatureHurl(f *scenario.Feature, doc *openapi3.T, opMap map[string]op
 	return buf.String(), nil
 }
 
-func writeActionHurl(buf *strings.Builder, step scenario.Step, opMap map[string]operationInfo, doc *openapi3.T, captures map[string]bool, hasToken *bool) {
+func writeActionHurlV2(buf *strings.Builder, step scenario.Step, statusCode string, assertions []scenario.Step, opMap map[string]operationInfo, doc *openapi3.T, captures map[string]bool, hasToken *bool) {
 	info, ok := opMap[step.OperationID]
 	if !ok {
 		buf.WriteString(fmt.Sprintf("# SKIP: %s %s (operationId not found)\n\n", step.Method, step.OperationID))
@@ -130,18 +146,18 @@ func writeActionHurl(buf *strings.Builder, step scenario.Step, opMap map[string]
 		buf.WriteString(body + "\n")
 	}
 
-	// Default status assertion (200) unless the next step is a status assertion.
-	buf.WriteString("\nHTTP 200\n")
+	// Status line.
+	buf.WriteString(fmt.Sprintf("\nHTTP %s\n", statusCode))
 
-	// Captures.
-	if step.Capture != "" {
+	// Captures (only for 2xx responses).
+	if step.Capture != "" && (statusCode == "200" || statusCode == "201") {
 		captures[step.Capture] = true
 		if step.Capture == "token" {
 			*hasToken = true
 			buf.WriteString("[Captures]\n")
 			buf.WriteString("token: jsonpath \"$.token.AccessToken\"\n")
 		} else {
-			// Infer capture from response schema.
+			// Infer capture from response schema — skip if response is an array.
 			captureVar, jsonPath := inferScenarioCapture(step.Capture, info.Op)
 			if captureVar != "" {
 				buf.WriteString("[Captures]\n")
@@ -150,46 +166,36 @@ func writeActionHurl(buf *strings.Builder, step scenario.Step, opMap map[string]
 		}
 	}
 
+	// Merged [Asserts] block for all trailing assertions.
+	if len(assertions) > 0 {
+		buf.WriteString("[Asserts]\n")
+		for _, a := range assertions {
+			writeAssertLineV2(buf, a.Assertion, captures)
+		}
+	}
+
 	buf.WriteString("\n")
 }
 
-func writeAssertionHurl(buf *strings.Builder, step scenario.Step, captures map[string]bool) {
-	a := step.Assertion
+func writeAssertLineV2(buf *strings.Builder, a scenario.Assertion, captures map[string]bool) {
 	switch a.Kind {
-	case scenario.AssertStatus:
-		// Status assertions are handled inline with the action step.
-		// We write a standalone [Asserts] block.
-		// Note: in Hurl, status is part of the response line, not [Asserts].
-		// The HTTP 200 line above handles the default. For non-200:
-		// We can't retroactively change it, so we emit as assert.
-		// Actually, keep it simple — emit as comment.
-		// (The HTTP line is already written above. For non-200 scenarios,
-		// the crosscheck would catch the mismatch.)
-		return
-
 	case scenario.AssertExists:
-		buf.WriteString("[Asserts]\n")
 		buf.WriteString(fmt.Sprintf("jsonpath \"$.%s\" exists\n", a.Field))
 
 	case scenario.AssertEquals:
-		buf.WriteString("[Asserts]\n")
 		val := resolveVarRef(a.Value, captures)
 		buf.WriteString(fmt.Sprintf("jsonpath \"$.%s\" == %s\n", a.Field, val))
 
 	case scenario.AssertContains:
-		buf.WriteString("[Asserts]\n")
 		val := resolveVarRef(a.Value, captures)
-		// e.g. response.courses contains course.ID → jsonpath "$.courses[*].ID" includes {{course_id}}
-		field, subField := splitVarRef(a.Value)
+		_, subField := splitVarRef(a.Value)
 		if subField != "" {
 			buf.WriteString(fmt.Sprintf("jsonpath \"$.%s[*].%s\" includes %s\n", a.Field, subField, val))
 		} else {
 			buf.WriteString(fmt.Sprintf("jsonpath \"$.%s\" includes %s\n", a.Field, val))
 		}
-		_ = field // used in resolveVarRef
 
 	case scenario.AssertExcludes:
-		buf.WriteString("[Asserts]\n")
 		val := resolveVarRef(a.Value, captures)
 		_, subField := splitVarRef(a.Value)
 		if subField != "" {
@@ -199,14 +205,12 @@ func writeAssertionHurl(buf *strings.Builder, step scenario.Step, captures map[s
 		}
 
 	case scenario.AssertCount:
-		buf.WriteString("[Asserts]\n")
 		buf.WriteString(fmt.Sprintf("jsonpath \"$.%s\" count %s %s\n", a.Field, a.Op, a.Value))
 	}
 }
 
 // buildScenarioURL substitutes path parameters from JSON body and captures.
 func buildScenarioURL(pathTemplate, json string, captures map[string]bool) string {
-	// Extract path params from template.
 	result := pathTemplate
 	i := 0
 	for i < len(result) {
@@ -224,12 +228,10 @@ func buildScenarioURL(pathTemplate, json string, captures map[string]bool) strin
 		// Try to find value in JSON body.
 		varName := findJSONVarRef(json, paramName)
 		if varName != "" {
-			// e.g. CourseID: course.ID → {{course_id}}
 			hurlVar := varRefToHurl(varName)
 			result = result[:pos] + "{{" + hurlVar + "}}" + result[pos+closeBrace+1:]
 			i = pos + len(hurlVar) + 4
 		} else {
-			// Use snake_case default.
 			hurlVar := pascalToSnakeHurl(paramName)
 			result = result[:pos] + "{{" + hurlVar + "}}" + result[pos+closeBrace+1:]
 			i = pos + len(hurlVar) + 4
@@ -315,7 +317,6 @@ func splitJSONFields(s string) []string {
 // substituteVarRefs replaces unquoted var.Field references with {{var_field}} Hurl syntax.
 func substituteVarRefs(value string) string {
 	value = strings.TrimSpace(value)
-	// Check if it's a variable reference (no quotes, contains a dot).
 	if !strings.HasPrefix(value, `"`) && strings.Contains(value, ".") {
 		return "{{" + varRefToHurl(value) + "}}"
 	}
@@ -324,7 +325,6 @@ func substituteVarRefs(value string) string {
 
 // varRefToHurl converts var.Field to var_field (snake_case).
 func varRefToHurl(ref string) string {
-	// e.g. course.ID → course_id
 	parts := strings.SplitN(ref, ".", 2)
 	if len(parts) != 2 {
 		return pascalToSnakeHurl(ref)
@@ -354,7 +354,6 @@ func findJSONVarRef(json, fieldName string) string {
 	if json == "" {
 		return ""
 	}
-	// Look for "FieldName": var.Something pattern.
 	inner := strings.TrimPrefix(strings.TrimSuffix(strings.TrimSpace(json), "}"), "{")
 	parts := splitJSONFields(inner)
 	for _, part := range parts {
@@ -369,7 +368,6 @@ func findJSONVarRef(json, fieldName string) string {
 			continue
 		}
 		val := strings.TrimSpace(part[colonIdx+1:])
-		// Check if it's a variable reference.
 		if !strings.HasPrefix(val, `"`) && strings.Contains(val, ".") {
 			return val
 		}
@@ -378,10 +376,10 @@ func findJSONVarRef(json, fieldName string) string {
 }
 
 // inferScenarioCapture infers capture variable and jsonpath from response schema.
+// Returns empty strings if the response is an array (no meaningful ID capture).
 func inferScenarioCapture(captureName string, op *openapi3.Operation) (string, string) {
 	respSchema := getResponseSchema(op)
 	if respSchema == nil {
-		// Fallback: capture_name → $.capture_name.ID
 		return captureName + "_id", "$." + captureName + ".ID"
 	}
 
@@ -389,7 +387,14 @@ func inferScenarioCapture(captureName string, op *openapi3.Operation) (string, s
 	for name, propRef := range respSchema.Properties {
 		if strings.EqualFold(name, captureName) {
 			prop := propRef.Value
-			if prop != nil && prop.Properties != nil {
+			if prop == nil {
+				continue
+			}
+			// Skip array responses — no single ID to capture.
+			if len(prop.Type.Slice()) > 0 && prop.Type.Slice()[0] == "array" {
+				return "", ""
+			}
+			if prop.Properties != nil {
 				if _, hasID := prop.Properties["ID"]; hasID {
 					return captureName + "_id", "$." + name + ".ID"
 				}
@@ -397,11 +402,11 @@ func inferScenarioCapture(captureName string, op *openapi3.Operation) (string, s
 		}
 	}
 
-	// Fallback: first object with ID.
+	// Fallback: first object with ID (skip arrays).
 	varName, jsonPath := inferCaptureField(respSchema)
 	if varName != "" {
 		return varName, jsonPath
 	}
 
-	return captureName + "_id", "$." + captureName + ".ID"
+	return "", ""
 }

@@ -4,9 +4,25 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 )
+
+func init() {
+	// Ensure ~/go/bin is in PATH so that go-installed tools are found.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	goBin := filepath.Join(home, "go", "bin")
+	path := os.Getenv("PATH")
+	if !strings.Contains(path, goBin) {
+		os.Setenv("PATH", goBin+string(os.PathListSeparator)+path)
+	}
+}
 
 const execTimeout = 30 * time.Second
 
