@@ -173,8 +173,13 @@ func transformSource(src string, models, funcs []string, modulePath string, xCon
 		rcvType = "*Handler"
 	}
 
-	// Add receiver to function declaration.
-	src = strings.Replace(src, "\nfunc ", "\nfunc ("+rcv+" "+rcvType+") ", 1)
+	// Add receiver to function declaration (skip if already has one).
+	if idx := strings.Index(src, "\nfunc "); idx >= 0 {
+		after := src[idx+len("\nfunc "):]
+		if len(after) == 0 || after[0] != '(' {
+			src = strings.Replace(src, "\nfunc ", "\nfunc ("+rcv+" "+rcvType+") ", 1)
+		}
+	}
 
 	// Replace model references: courseModel → {rcv}.CourseModel
 	for _, m := range models {

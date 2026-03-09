@@ -85,3 +85,25 @@ cd /tmp/dummy-lesson-out/backend && go mod tidy && go build ./...
 # 4. go test
 go test ./internal/...
 ```
+
+---
+
+## 추가 수정 (스모크 테스트 중 발견)
+
+### F. gluegen — transformSource receiver 중복 방지
+
+| 파일 | 변경 |
+|------|------|
+| `internal/gluegen/gluegen.go` | `transformSource`에서 `\nfunc ` 뒤에 `(`가 이미 있으면(receiver 존재) 치환 건너뛰기. 기존 artifacts에 재실행 시 `(s *Server) (s *Server)` 중복 receiver 버그 수정 |
+
+### G. authzgen — via 매핑 create 시 부모 테이블 직접 조회
+
+| 파일 | 변경 |
+|------|------|
+| `internal/gluegen/authzgen.go` | `lookupOwner`에 `action` 파라미터 추가. `via` ownership 매핑에서 action이 `create`이면 자식 테이블 JOIN 대신 부모 테이블에서 직접 소유자 조회. 아직 자식 레코드가 없는 create 시 403 발생 버그 수정 |
+
+### H. dummy-lesson model — @dto 추가
+
+| 파일 | 변경 |
+|------|------|
+| `specs/dummy-lesson/model/session.go` | `IssueTokenResponse`, `HashPasswordResponse` DTO 추가. 교차 검증 경고 해소 |

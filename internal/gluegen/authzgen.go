@@ -93,7 +93,7 @@ func (a *OPAAuthorizer) Check(user *model.CurrentUser, action, resource string, 
 		"resource_id": id,
 	}
 
-	if ownerID, err := a.lookupOwner(resource, id); err == nil {
+	if ownerID, err := a.lookupOwner(action, resource, id); err == nil {
 		input["resource_owner"] = ownerID
 	}
 
@@ -111,7 +111,7 @@ func (a *OPAAuthorizer) Check(user *model.CurrentUser, action, resource string, 
 `)
 
 	// Generate lookupOwner.
-	b.WriteString("func (a *OPAAuthorizer) lookupOwner(resource string, id interface{}) (int64, error) {\n")
+	b.WriteString("func (a *OPAAuthorizer) lookupOwner(action, resource string, id interface{}) (int64, error) {\n")
 	if len(ownerships) == 0 {
 		b.WriteString("\treturn 0, fmt.Errorf(\"no ownership mapping for resource: %s\", resource)\n")
 	} else {
@@ -120,18 +120,25 @@ func (a *OPAAuthorizer) Check(user *model.CurrentUser, action, resource string, 
 			b.WriteString(fmt.Sprintf("\tcase %q:\n", om.Resource))
 			b.WriteString("\t\tvar ownerID int64\n")
 			if om.JoinTable != "" {
-				// JOIN query.
-				b.WriteString(fmt.Sprintf("\t\terr := a.db.QueryRow(\n"))
-				b.WriteString(fmt.Sprintf("\t\t\t\"SELECT t.%s FROM %s t JOIN %s j ON t.id = j.%s WHERE j.id = $1\",\n",
+				// Via mapping: on create, the id is the parent's ID, so query parent table directly.
+				b.WriteString("\t\tvar err error\n")
+				b.WriteString("\t\tif action == \"create\" {\n")
+				b.WriteString(fmt.Sprintf("\t\t\terr = a.db.QueryRow(\"SELECT %s FROM %s WHERE id = $1\", id).Scan(&ownerID)\n",
+					om.Column, om.Table))
+				b.WriteString("\t\t} else {\n")
+				b.WriteString(fmt.Sprintf("\t\t\terr = a.db.QueryRow(\n"))
+				b.WriteString(fmt.Sprintf("\t\t\t\t\"SELECT t.%s FROM %s t JOIN %s j ON t.id = j.%s WHERE j.id = $1\",\n",
 					om.Column, om.Table, om.JoinTable, om.JoinFK))
-				b.WriteString("\t\t\tid,\n")
-				b.WriteString("\t\t).Scan(&ownerID)\n")
+				b.WriteString("\t\t\t\tid,\n")
+				b.WriteString("\t\t\t).Scan(&ownerID)\n")
+				b.WriteString("\t\t}\n")
+				b.WriteString("\t\treturn ownerID, err\n")
 			} else {
 				// Direct query.
 				b.WriteString(fmt.Sprintf("\t\terr := a.db.QueryRow(\"SELECT %s FROM %s WHERE id = $1\", id).Scan(&ownerID)\n",
 					om.Column, om.Table))
+				b.WriteString("\t\treturn ownerID, err\n")
 			}
-			b.WriteString("\t\treturn ownerID, err\n")
 		}
 		b.WriteString("\tdefault:\n")
 		b.WriteString("\t\treturn 0, fmt.Errorf(\"no ownership mapping for resource: %s\", resource)\n")
