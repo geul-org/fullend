@@ -8,7 +8,7 @@ specs/
 ├── api/openapi.yaml         → OpenAPI 3.x
 ├── db/*.sql                 → SQL DDL + sqlc queries
 ├── service/*.go             → SSaC (comment DSL)
-├── model/*.go               → Go interfaces
+├── model/*.go               → Go structs (// @dto for non-DDL types)
 ├── func/<pkg>/*.go          → Custom func implementations (optional)
 ├── states/*.md              → Mermaid stateDiagram (state transitions)
 ├── policy/*.rego            → OPA Rego (authorization policies)
@@ -35,6 +35,7 @@ fullend validate --skip states,terraform <specs-dir>
 ```
 
 ```
+✓ Config       my-project, go/gin, typescript/react
 ✓ OpenAPI      7 endpoints
 ✓ DDL          3 tables, 18 columns
 ✓ SSaC         7 service functions
@@ -126,6 +127,7 @@ Route grouping is determined by OpenAPI `security` field on each operation:
 
 Individual tools (SSaC, STML) validate within their own layer. fullend catches mismatches **between** layers:
 
+- **fullend.yaml ↔ OpenAPI** — middleware names match securitySchemes keys
 - **OpenAPI x-sort/x-filter ↔ DDL** — referenced columns exist in tables
 - **OpenAPI x-include ↔ DDL** — referenced resources map to tables
 - **SSaC @result ↔ DDL** — result types match DDL-derived models
