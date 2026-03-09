@@ -15,6 +15,7 @@ const (
 	KindModel     SSOTKind = "Model"
 	KindSTML      SSOTKind = "STML"
 	KindTerraform SSOTKind = "Terraform"
+	KindStates    SSOTKind = "States"
 )
 
 // DetectedSSOT holds the kind and resolved directory path.
@@ -67,6 +68,12 @@ func DetectSSOTs(root string) ([]DetectedSSOT, error) {
 				found = append(found, DetectedSSOT{Kind: c.kind, Path: filepath.Join(abs, "service")})
 			}
 		}
+	}
+
+	// Check for states/ directory (Mermaid stateDiagram files).
+	statesDir := filepath.Join(abs, "states")
+	if statesMatches, _ := filepath.Glob(filepath.Join(statesDir, "*.md")); len(statesMatches) > 0 {
+		found = append(found, DetectedSSOT{Kind: KindStates, Path: statesDir})
 	}
 
 	return found, nil

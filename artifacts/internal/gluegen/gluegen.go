@@ -239,6 +239,11 @@ func transformSource(src string, models, funcs, components []string, modulePath 
 		}
 	}
 
+	// Fix state machine imports: "states/XXXstate" → "{modulePath}/internal/states/XXXstate"
+	if strings.Contains(src, "\"states/") {
+		src = strings.ReplaceAll(src, "\"states/", fmt.Sprintf("\"%s/internal/states/", modulePath))
+	}
+
 	// Add type assertions for @func results used as string arguments.
 	for _, f := range funcs {
 		callPattern := rcv + "." + ucFirst(f) + "("

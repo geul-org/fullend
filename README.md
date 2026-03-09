@@ -1,6 +1,6 @@
 # fullend
 
-Full-stack SSOT orchestrator — validates consistency across 5 SSOT sources (STML, OpenAPI, SSaC, SQL DDL, Terraform) and generates code from them in a single CLI.
+Full-stack SSOT orchestrator — validates consistency across 6 SSOT sources (STML, OpenAPI, SSaC, SQL DDL, Mermaid stateDiagram, Terraform) and generates code from them in a single CLI.
 
 ```
 specs/
@@ -8,6 +8,7 @@ specs/
 ├── db/*.sql               → SQL DDL + sqlc queries
 ├── service/*.go           → SSaC (comment DSL)
 ├── model/*.go             → Go interfaces
+├── states/*.md            → Mermaid stateDiagram (state transitions)
 ├── frontend/*.html        → STML (HTML5 + data-*)
 └── terraform/*.tf         → HCL
 ```
@@ -33,6 +34,7 @@ fullend validate <specs-dir>
 ✓ DDL          3 tables, 18 columns
 ✓ SSaC         7 service functions
 ✓ STML         4 pages, 6 bindings
+✓ States       1 diagrams, 3 transitions
 ✓ Cross        0 mismatches
 
 All SSOT sources are consistent.
@@ -60,6 +62,7 @@ SSOT Status:
   DDL          db                             3 tables, 18 columns
   SSaC         service                        7 functions
   STML         frontend                       4 pages
+  States       states                         1 diagrams, 3 transitions
 ```
 
 ## Cross-Validation
@@ -70,6 +73,9 @@ Individual tools (SSaC, STML) validate within their own layer. fullend catches m
 - **OpenAPI x-include ↔ DDL** — referenced resources map to tables
 - **SSaC @result ↔ DDL** — result types match DDL-derived models
 - **SSaC @param ↔ DDL** — parameter names match table columns
+- **States ↔ SSaC** — transition events match SSaC functions, guard state references valid diagrams
+- **States ↔ DDL** — state fields map to existing DDL columns
+- **States ↔ OpenAPI** — transition events match operationIds
 - **STML ↔ SSaC** (indirect) — both reference the same OpenAPI operationIds
 
 ## Runtime Testing

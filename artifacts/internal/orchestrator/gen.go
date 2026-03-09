@@ -11,6 +11,7 @@ import (
 
 	"github.com/geul-org/fullend/artifacts/internal/gluegen"
 	"github.com/geul-org/fullend/artifacts/internal/reporter"
+	"github.com/geul-org/fullend/artifacts/internal/statemachine"
 	ssacgenerator "github.com/geul-org/ssac/generator"
 	ssacparser "github.com/geul-org/ssac/parser"
 	ssacvalidator "github.com/geul-org/ssac/validator"
@@ -114,7 +115,12 @@ func GenWith(profile *TargetProfile, specsDir, artifactsDir string) (*reporter.R
 		}
 	}
 
-	// 9. terraform fmt (외부 도구, 선택)
+	// 9. State machine code generation.
+	if d, ok := has[KindStates]; ok {
+		report.Steps = append(report.Steps, genStateMachines(d.Path, artifactsDir))
+	}
+
+	// 10. terraform fmt (외부 도구, 선택)
 	if _, ok := has[KindTerraform]; ok {
 		if terraformAvailable {
 			report.Steps = append(report.Steps, genTerraform(specsDir))
@@ -394,6 +400,33 @@ func determineModulePath(artifactsDir string) string {
 	// Derive from directory name.
 	base := filepath.Base(artifactsDir)
 	return base + "/backend"
+}
+
+func genStateMachines(statesDir, artifactsDir string) reporter.StepResult {
+	step := reporter.StepResult{Name: "state-gen"}
+
+	diagrams, err := statemachine.ParseDir(statesDir)
+	if err != nil {
+		step.Status = reporter.Fail
+		step.Errors = append(step.Errors, fmt.Sprintf("States parse error: %v", err))
+		return step
+	}
+	if len(diagrams) == 0 {
+		step.Status = reporter.Skip
+		step.Summary = "no state diagrams"
+		return step
+	}
+
+	modulePath := determineModulePath(artifactsDir)
+	if err := gluegen.GenerateStateMachines(diagrams, artifactsDir, modulePath); err != nil {
+		step.Status = reporter.Fail
+		step.Errors = append(step.Errors, fmt.Sprintf("state-gen error: %v", err))
+		return step
+	}
+
+	step.Status = reporter.Pass
+	step.Summary = fmt.Sprintf("%d state machines generated", len(diagrams))
+	return step
 }
 
 func genTerraform(specsDir string) reporter.StepResult {

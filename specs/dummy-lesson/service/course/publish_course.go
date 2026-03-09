@@ -15,6 +15,9 @@ import "net/http"
 // @sequence guard nil course
 // @message "강의를 찾을 수 없습니다"
 //
+// @sequence guard state course
+// @param course.Published
+//
 // @sequence put
 // @model Course.Publish
 // @param CourseID request

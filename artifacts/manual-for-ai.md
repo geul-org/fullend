@@ -1,7 +1,7 @@
 # fullend — AI SSOT 통합 가이드
 
-> 5개 SSOT(OpenAPI, SQL DDL, SSaC, STML, Terraform)를 한 프로젝트에 작성할 때의 규칙.
-> OpenAPI/SQL DDL/Terraform 자체 문법은 설명하지 않는다. SSaC/STML 고유 문법과 SSOT 간 연결 규칙만 다룬다.
+> 6개 SSOT(OpenAPI, SQL DDL, SSaC, STML, Mermaid stateDiagram, Terraform)를 한 프로젝트에 작성할 때의 규칙.
+> OpenAPI/SQL DDL/Terraform 자체 문법은 설명하지 않는다. SSaC/STML/stateDiagram 고유 문법과 SSOT 간 연결 규칙만 다룬다.
 
 ## 프로젝트 디렉토리 구조
 
@@ -13,6 +13,7 @@
 │   └── queries/*.sql             # sqlc 쿼리 (-- name: Method :cardinality)
 ├── service/*.go                  # SSaC 선언 (Go 주석 DSL)
 ├── model/*.go                    # Go interface (component, func 정의)
+├── states/*.md                    # Mermaid stateDiagram (상태 전이)
 ├── frontend/
 │   ├── *.html                    # STML 선언 (HTML5 + data-*)
 │   ├── *.custom.ts               # 프론트엔드 계산 함수 (선택)
@@ -35,7 +36,7 @@
 // @component | @func      — call 전용 (택일 필수)
 ```
 
-### 10가지 시퀀스 타입
+### 11가지 시퀀스 타입
 
 | 타입 | 용도 | 필수 태그 |
 |---|---|---|
@@ -43,6 +44,7 @@
 | get | 단건/목록 조회 | @model, @result |
 | guard nil | nil이면 에러 반환 | target 변수명 |
 | guard exists | nil 아니면 에러 반환 | target 변수명 |
+| guard state | 상태 전이 가능 여부 검사 | target stateDiagramID, @param entity.Field |
 | post | 생성 | @model, @result |
 | put | 수정 | @model |
 | delete | 삭제 | @model |
@@ -297,14 +299,14 @@ type NotificationService interface {
 - `func Xxx(...)` → `@func xxx`로 참조 가능
 - `// @dto` 주석이 달린 struct → DDL 테이블 매칭 건너뜀 (Token, Refund 같은 순수 DTO용)
 
-## 5-SSOT 연결 맵
+## SSOT 연결 맵
 
 ```
          OpenAPI (operationId)
            ↕               ↕
     SSaC (함수명)      STML (data-fetch/action)
-      ↕
-  DDL (테이블/컬럼)
+      ↕         ↕
+  DDL (테이블)  States (stateDiagram)
       ↕
   sqlc 쿼리 (모델.메서드)
 ```
@@ -313,6 +315,7 @@ type NotificationService interface {
 
 | 소스 | 대상 | 매칭 |
 |---|---|---|
+| stateDiagram 전이 이벤트 | SSaC 함수명 / OpenAPI operationId | 동일 (PascalCase) |
 | SSaC 함수명 | OpenAPI operationId | 동일 (PascalCase) |
 | STML data-fetch/action | OpenAPI operationId | 동일 (PascalCase) |
 | SSaC @model Model | DDL 테이블명 | PascalCase → snake_case + 복수형 (`Course` → `courses`) |
@@ -334,6 +337,59 @@ type NotificationService interface {
 | SSaC @param ↔ DDL | 파라미터에 대응하는 컬럼이 있는가 | WARNING |
 | SSaC 함수명 → operationId | SSaC 함수에 대응하는 operationId가 있는가 | ERROR |
 | operationId → SSaC 함수명 | operationId에 대응하는 SSaC 함수가 있는가 | WARNING |
+| States 전이 이벤트 → SSaC | 전이 이벤트에 대응하는 SSaC 함수가 있는가 | ERROR |
+| States 전이 이벤트 → OpenAPI | 전이 이벤트에 대응하는 operationId가 있는가 | ERROR |
+| SSaC guard state → States | 참조하는 stateDiagram이 존재하는가 | ERROR |
+| States 전이 → SSaC guard state | 전이가 있는 함수에 guard state가 있는가 | WARNING |
+| guard state 필드 → DDL | 상태 필드가 DDL 컬럼에 존재하는가 | ERROR |
+
+## Mermaid stateDiagram — 상태 전이 선언
+
+`states/*.md` 파일에 Mermaid stateDiagram으로 리소스 상태 전이를 선언한다.
+
+### 문법
+
+```markdown
+# CourseState
+
+​```mermaid
+stateDiagram-v2
+    [*] --> unpublished
+    unpublished --> published: PublishCourse
+    published --> deleted: DeleteCourse
+    unpublished --> deleted: DeleteCourse
+​```
+```
+
+### 규칙
+
+- 파일명 = stateDiagram ID (예: `course.md` → `course`)
+- 전이 레이블 = SSaC 함수명 = OpenAPI operationId (PascalCase)
+- `[*]` → 초기 상태 (DDL DEFAULT 값과 일치해야 함)
+- 하나의 파일에 하나의 stateDiagram만 선언
+
+### SSaC에서의 사용
+
+```go
+// @sequence guard state course
+// @param course.Published
+```
+
+- `course`: stateDiagram ID (`states/course.md`)
+- `course.Published`: 이전 @result 변수의 상태 필드
+- 함수명이 전이 이벤트로 사용됨 (PublishCourse 함수 → PublishCourse 전이)
+
+### 코드젠 출력
+
+```go
+// guard state → 409 Conflict if transition not allowed
+if !coursestate.CanTransition(course.Published, "PublishCourse") {
+    http.Error(w, "상태 전이가 허용되지 않습니다", http.StatusConflict)
+    return
+}
+```
+
+상태 머신 패키지 (`states/<id>state/<id>state.go`)는 fullend gen이 자동 생성한다.
 
 ## 런타임 검증 (Hurl)
 
@@ -354,6 +410,6 @@ hurl --test --variable host=http://localhost:8080 artifacts/<project>/tests/smok
 
 ```bash
 fullend validate <specs-dir>                 # 개별 검증 + 교차 검증
-fullend gen <specs-dir> <artifacts-dir>      # validate → 코드젠 + Hurl 테스트 생성
+fullend gen <specs-dir> <artifacts-dir>      # validate → 코드젠 + Hurl 테스트 + 상태 머신 생성
 fullend status <specs-dir>                   # SSOT 현황 요약
 ```
