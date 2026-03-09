@@ -11,7 +11,7 @@ import (
 // @func presignURL
 // @description 서명된 다운로드 URL을 생성한다
 
-type PresignURLInput struct {
+type PresignURLRequest struct {
 	Bucket    string
 	Key       string
 	ExpiresIn int // 초 단위 (기본 3600)
@@ -19,26 +19,26 @@ type PresignURLInput struct {
 	Region    string
 }
 
-type PresignURLOutput struct {
+type PresignURLResponse struct {
 	URL string
 }
 
-func PresignURL(in PresignURLInput) (PresignURLOutput, error) {
-	client, err := newS3Client(in.Endpoint, in.Region)
+func PresignURL(req PresignURLRequest) (PresignURLResponse, error) {
+	client, err := newS3Client(req.Endpoint, req.Region)
 	if err != nil {
-		return PresignURLOutput{}, err
+		return PresignURLResponse{}, err
 	}
-	expiresIn := in.ExpiresIn
+	expiresIn := req.ExpiresIn
 	if expiresIn <= 0 {
 		expiresIn = 3600
 	}
 	presigner := s3.NewPresignClient(client)
-	req, err := presigner.PresignGetObject(context.Background(), &s3.GetObjectInput{
-		Bucket: aws.String(in.Bucket),
-		Key:    aws.String(in.Key),
+	presigned, err := presigner.PresignGetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: aws.String(req.Bucket),
+		Key:    aws.String(req.Key),
 	}, s3.WithPresignExpires(time.Duration(expiresIn)*time.Second))
 	if err != nil {
-		return PresignURLOutput{}, err
+		return PresignURLResponse{}, err
 	}
-	return PresignURLOutput{URL: req.URL}, nil
+	return PresignURLResponse{URL: presigned.URL}, nil
 }

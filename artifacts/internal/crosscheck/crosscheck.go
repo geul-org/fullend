@@ -59,7 +59,7 @@ func Run(input *CrossValidateInput) []CrossError {
 
 	// Func ↔ SSaC
 	if input.ServiceFuncs != nil {
-		errs = append(errs, CheckFuncs(input.ServiceFuncs, input.FullendPkgSpecs, input.ProjectFuncSpecs)...)
+		errs = append(errs, CheckFuncs(input.ServiceFuncs, input.FullendPkgSpecs, input.ProjectFuncSpecs, input.SymbolTable, input.OpenAPIDoc)...)
 	}
 
 	return errs

@@ -18,17 +18,17 @@ import "golang.org/x/crypto/bcrypt"
 // @func hashPassword
 // @description 평문 비밀번호를 bcrypt 해시로 변환한다
 
-type HashPasswordInput struct {
+type HashPasswordRequest struct {
 	Password string
 }
 
-type HashPasswordOutput struct {
+type HashPasswordResponse struct {
 	HashedPassword string
 }
 
-func HashPassword(in HashPasswordInput) (HashPasswordOutput, error) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
-	return HashPasswordOutput{HashedPassword: string(hash)}, err
+func HashPassword(req HashPasswordRequest) (HashPasswordResponse, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	return HashPasswordResponse{HashedPassword: string(hash)}, err
 }
 `
 	path := filepath.Join(pkgDir, "hash_password.go")
@@ -48,17 +48,17 @@ func HashPassword(in HashPasswordInput) (HashPasswordOutput, error) {
 	if spec.Description != "평문 비밀번호를 bcrypt 해시로 변환한다" {
 		t.Errorf("Description = %q", spec.Description)
 	}
-	if len(spec.InputFields) != 1 {
-		t.Fatalf("InputFields count = %d, want 1", len(spec.InputFields))
+	if len(spec.RequestFields) != 1 {
+		t.Fatalf("RequestFields count = %d, want 1", len(spec.RequestFields))
 	}
-	if spec.InputFields[0].Name != "Password" || spec.InputFields[0].Type != "string" {
-		t.Errorf("InputFields[0] = %+v", spec.InputFields[0])
+	if spec.RequestFields[0].Name != "Password" || spec.RequestFields[0].Type != "string" {
+		t.Errorf("RequestFields[0] = %+v", spec.RequestFields[0])
 	}
-	if len(spec.OutputFields) != 1 {
-		t.Fatalf("OutputFields count = %d, want 1", len(spec.OutputFields))
+	if len(spec.ResponseFields) != 1 {
+		t.Fatalf("ResponseFields count = %d, want 1", len(spec.ResponseFields))
 	}
-	if spec.OutputFields[0].Name != "HashedPassword" || spec.OutputFields[0].Type != "string" {
-		t.Errorf("OutputFields[0] = %+v", spec.OutputFields[0])
+	if spec.ResponseFields[0].Name != "HashedPassword" || spec.ResponseFields[0].Type != "string" {
+		t.Errorf("ResponseFields[0] = %+v", spec.ResponseFields[0])
 	}
 	if !spec.HasBody {
 		t.Error("HasBody = false, want true")
@@ -73,16 +73,16 @@ func TestParseFileStub(t *testing.T) {
 // @func calculateRefund
 // @description 환불 금액을 계산한다
 
-type CalculateRefundInput struct {
+type CalculateRefundRequest struct {
 	Amount int
 }
 
-type CalculateRefundOutput struct {
+type CalculateRefundResponse struct {
 	Refund int
 }
 
-func CalculateRefund(in CalculateRefundInput) (CalculateRefundOutput, error) {
-	return CalculateRefundOutput{}, nil
+func CalculateRefund(req CalculateRefundRequest) (CalculateRefundResponse, error) {
+	return CalculateRefundResponse{}, nil
 }
 `
 	path := filepath.Join(dir, "calculate_refund.go")
@@ -112,14 +112,14 @@ func TestParseDir(t *testing.T) {
 // @func hashPassword
 // @description hash
 
-type HashPasswordInput struct {
+type HashPasswordRequest struct {
 	Password string
 }
-type HashPasswordOutput struct {
+type HashPasswordResponse struct {
 	HashedPassword string
 }
-func HashPassword(in HashPasswordInput) (HashPasswordOutput, error) {
-	return HashPasswordOutput{HashedPassword: "hashed"}, nil
+func HashPassword(req HashPasswordRequest) (HashPasswordResponse, error) {
+	return HashPasswordResponse{HashedPassword: "hashed"}, nil
 }
 `
 	verify := `package auth
@@ -127,13 +127,13 @@ func HashPassword(in HashPasswordInput) (HashPasswordOutput, error) {
 // @func verifyPassword
 // @description verify
 
-type VerifyPasswordInput struct {
+type VerifyPasswordRequest struct {
 	PasswordHash string
 	Password     string
 }
-type VerifyPasswordOutput struct{}
-func VerifyPassword(in VerifyPasswordInput) (VerifyPasswordOutput, error) {
-	return VerifyPasswordOutput{}, nil
+type VerifyPasswordResponse struct{}
+func VerifyPassword(req VerifyPasswordRequest) (VerifyPasswordResponse, error) {
+	return VerifyPasswordResponse{}, nil
 }
 `
 	os.WriteFile(filepath.Join(authDir, "hash_password.go"), []byte(hash), 0644)

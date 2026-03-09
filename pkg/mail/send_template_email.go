@@ -10,7 +10,7 @@ import (
 // @func sendTemplateEmail
 // @description Go 템플릿으로 HTML 이메일을 발송한다
 
-type SendTemplateEmailInput struct {
+type SendTemplateEmailRequest struct {
 	Host         string
 	Port         int
 	Username     string
@@ -22,21 +22,21 @@ type SendTemplateEmailInput struct {
 	Data         map[string]string // 템플릿 변수
 }
 
-type SendTemplateEmailOutput struct{}
+type SendTemplateEmailResponse struct{}
 
-func SendTemplateEmail(in SendTemplateEmailInput) (SendTemplateEmailOutput, error) {
-	tmpl, err := template.New("email").Parse(in.TemplateName)
+func SendTemplateEmail(req SendTemplateEmailRequest) (SendTemplateEmailResponse, error) {
+	tmpl, err := template.New("email").Parse(req.TemplateName)
 	if err != nil {
-		return SendTemplateEmailOutput{}, err
+		return SendTemplateEmailResponse{}, err
 	}
 	var body bytes.Buffer
-	if err := tmpl.Execute(&body, in.Data); err != nil {
-		return SendTemplateEmailOutput{}, err
+	if err := tmpl.Execute(&body, req.Data); err != nil {
+		return SendTemplateEmailResponse{}, err
 	}
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nMIME-Version: 1.0\r\nContent-Type: text/html; charset=\"UTF-8\"\r\n\r\n%s",
-		in.From, in.To, in.Subject, body.String())
-	auth := smtp.PlainAuth("", in.Username, in.Password, in.Host)
-	addr := fmt.Sprintf("%s:%d", in.Host, in.Port)
-	err = smtp.SendMail(addr, auth, in.From, []string{in.To}, []byte(msg))
-	return SendTemplateEmailOutput{}, err
+		req.From, req.To, req.Subject, body.String())
+	auth := smtp.PlainAuth("", req.Username, req.Password, req.Host)
+	addr := fmt.Sprintf("%s:%d", req.Host, req.Port)
+	err = smtp.SendMail(addr, auth, req.From, []string{req.To}, []byte(msg))
+	return SendTemplateEmailResponse{}, err
 }

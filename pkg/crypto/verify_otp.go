@@ -9,16 +9,16 @@ import (
 // @func verifyOTP
 // @description TOTP 코드가 시크릿과 일치하는지 검증한다
 
-type VerifyOTPInput struct {
+type VerifyOTPRequest struct {
 	Code   string
 	Secret string
 }
 
-type VerifyOTPOutput struct{}
+type VerifyOTPResponse struct{}
 
-func VerifyOTP(in VerifyOTPInput) (VerifyOTPOutput, error) {
-	if !totp.Validate(in.Code, in.Secret) {
-		return VerifyOTPOutput{}, fmt.Errorf("invalid OTP code")
+func VerifyOTP(req VerifyOTPRequest) (VerifyOTPResponse, error) {
+	if !totp.Validate(req.Code, req.Secret) {
+		return VerifyOTPResponse{}, fmt.Errorf("invalid OTP code")
 	}
-	return VerifyOTPOutput{}, nil
+	return VerifyOTPResponse{}, nil
 }

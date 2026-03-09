@@ -8,7 +8,7 @@ import (
 // @func sendEmail
 // @description SMTP를 통해 이메일을 발송한다
 
-type SendEmailInput struct {
+type SendEmailRequest struct {
 	Host     string // SMTP 호스트 (예: smtp.gmail.com)
 	Port     int    // SMTP 포트 (예: 587)
 	Username string
@@ -19,13 +19,13 @@ type SendEmailInput struct {
 	Body     string // plain text
 }
 
-type SendEmailOutput struct{}
+type SendEmailResponse struct{}
 
-func SendEmail(in SendEmailInput) (SendEmailOutput, error) {
-	auth := smtp.PlainAuth("", in.Username, in.Password, in.Host)
+func SendEmail(req SendEmailRequest) (SendEmailResponse, error) {
+	auth := smtp.PlainAuth("", req.Username, req.Password, req.Host)
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n%s",
-		in.From, in.To, in.Subject, in.Body)
-	addr := fmt.Sprintf("%s:%d", in.Host, in.Port)
-	err := smtp.SendMail(addr, auth, in.From, []string{in.To}, []byte(msg))
-	return SendEmailOutput{}, err
+		req.From, req.To, req.Subject, req.Body)
+	addr := fmt.Sprintf("%s:%d", req.Host, req.Port)
+	err := smtp.SendMail(addr, auth, req.From, []string{req.To}, []byte(msg))
+	return SendEmailResponse{}, err
 }

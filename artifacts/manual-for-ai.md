@@ -153,17 +153,17 @@ import "golang.org/x/crypto/bcrypt"
 // @func hashPassword
 // @description 평문 비밀번호를 bcrypt 해시로 변환한다
 
-type HashPasswordInput struct {
+type HashPasswordRequest struct {
     Password string
 }
 
-type HashPasswordOutput struct {
+type HashPasswordResponse struct {
     HashedPassword string
 }
 
-func HashPassword(in HashPasswordInput) (HashPasswordOutput, error) {
-    hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
-    return HashPasswordOutput{HashedPassword: string(hash)}, err
+func HashPassword(req HashPasswordRequest) (HashPasswordResponse, error) {
+    hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+    return HashPasswordResponse{HashedPassword: string(hash)}, err
 }
 ```
 
@@ -171,8 +171,8 @@ func HashPassword(in HashPasswordInput) (HashPasswordOutput, error) {
 
 - **`@func`**: Function identifier (matches SSaC `@func pkg.funcName`)
 - **`@description`**: Natural language one-liner (LLM uses this to implement the body)
-- **Input/Output struct**: Go structs are the spec. No additional annotations needed.
-- **Signature**: Always `func FuncName(in FuncNameInput) (FuncNameOutput, error)`
+- **Request/Response struct**: Go structs are the spec. No additional annotations needed.
+- **Signature**: Always `func FuncName(req FuncNameRequest) (FuncNameResponse, error)`
 - **Package-level function**: No Service struct dependency
 
 ### Fallback Chain
@@ -187,7 +187,7 @@ fullend ships with built-in default implementations in `pkg/`:
 
 #### auth — 인증
 
-| Function | Description | Input | Output |
+| Function | Description | Request | Response |
 |---|---|---|---|
 | `hashPassword` | bcrypt 해싱 | `{ Password }` | `{ HashedPassword }` |
 | `verifyPassword` | bcrypt 검증 | `{ PasswordHash, Password }` | `{}` (error=불일치) |
@@ -198,7 +198,7 @@ fullend ships with built-in default implementations in `pkg/`:
 
 #### crypto — 암호화
 
-| Function | Description | Input | Output |
+| Function | Description | Request | Response |
 |---|---|---|---|
 | `encrypt` | AES-256-GCM 암호화 | `{ Plaintext, Key(hex) }` | `{ Ciphertext(base64) }` |
 | `decrypt` | AES-256-GCM 복호화 | `{ Ciphertext(base64), Key(hex) }` | `{ Plaintext }` |
@@ -207,7 +207,7 @@ fullend ships with built-in default implementations in `pkg/`:
 
 #### storage — S3 호환 파일 스토리지
 
-| Function | Description | Input | Output |
+| Function | Description | Request | Response |
 |---|---|---|---|
 | `uploadFile` | 파일 업로드 | `{ Bucket, Key, Data, ContentType, Endpoint, Region }` | `{ URL }` |
 | `deleteFile` | 파일 삭제 | `{ Bucket, Key, Endpoint, Region }` | `{}` |
@@ -215,14 +215,14 @@ fullend ships with built-in default implementations in `pkg/`:
 
 #### mail — 이메일
 
-| Function | Description | Input | Output |
+| Function | Description | Request | Response |
 |---|---|---|---|
 | `sendEmail` | SMTP 평문 이메일 | `{ Host, Port, Username, Password, From, To, Subject, Body }` | `{}` |
 | `sendTemplateEmail` | Go 템플릿 HTML 이메일 | `{ Host, Port, Username, Password, From, To, Subject, TemplateName, Data }` | `{}` |
 
 #### text — 텍스트 처리
 
-| Function | Description | Input | Output |
+| Function | Description | Request | Response |
 |---|---|---|---|
 | `generateSlug` | URL-safe slug 생성 | `{ Text }` | `{ Slug }` |
 | `sanitizeHTML` | XSS 방지 HTML 정제 | `{ HTML }` | `{ Sanitized }` |
@@ -230,7 +230,7 @@ fullend ships with built-in default implementations in `pkg/`:
 
 #### image — 이미지 처리
 
-| Function | Description | Input | Output |
+| Function | Description | Request | Response |
 |---|---|---|---|
 | `ogImage` | OG 이미지 생성 (1200x630, PNG) | `{ Data }` | `{ Data }` |
 | `thumbnail` | 썸네일 생성 (200x200, PNG) | `{ Data }` | `{ Data }` |
@@ -248,7 +248,7 @@ SSaC에서 `@func pkg.funcName` 으로 참조:
 
 생성 코드:
 ```go
-out, err := auth.HashPassword(auth.HashPasswordInput{Password: password})
+out, err := auth.HashPassword(auth.HashPasswordRequest{Password: password})
 if err != nil {
     http.Error(w, "hashPassword 호출 실패", http.StatusInternalServerError)
     return
@@ -270,17 +270,17 @@ package billing
 // @func calculateRefund
 // @description <이 함수가 무엇을 하는지 한 줄로 설명>
 
-type CalculateRefundInput struct {
+type CalculateRefundRequest struct {
     Reservation Reservation
 }
 
-type CalculateRefundOutput struct {
+type CalculateRefundResponse struct {
     Refund Refund
 }
 
-func CalculateRefund(in CalculateRefundInput) (CalculateRefundOutput, error) {
+func CalculateRefund(req CalculateRefundRequest) (CalculateRefundResponse, error) {
     // TODO: implement
-    return CalculateRefundOutput{}, nil
+    return CalculateRefundResponse{}, nil
 }
 ```
 
@@ -570,6 +570,10 @@ After individual tools (ssac validate, stml validate) run their own checks, full
 | Scenario -> States | Scenario step order follows state transitions | WARNING |
 | Func -> SSaC @func | @func reference has matching implementation | ERROR |
 | Func body | Function body is not a TODO stub | WARNING |
+| Func param count | @param count = Request field count | ERROR |
+| Func param type | i-th @param type (DDL/OpenAPI) = i-th Request field type | ERROR |
+| Func result/response | @result exists ↔ Response fields exist | ERROR/WARNING |
+| Func source var | @param source variable defined in prior @result | WARNING |
 
 ## Mermaid stateDiagram — State Transition Declarations
 

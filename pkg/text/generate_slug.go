@@ -5,14 +5,14 @@ import "github.com/gosimple/slug"
 // @func generateSlug
 // @description 텍스트를 URL-safe slug로 변환한다
 
-type GenerateSlugInput struct {
+type GenerateSlugRequest struct {
 	Text string
 }
 
-type GenerateSlugOutput struct {
+type GenerateSlugResponse struct {
 	Slug string
 }
 
-func GenerateSlug(in GenerateSlugInput) (GenerateSlugOutput, error) {
-	return GenerateSlugOutput{Slug: slug.Make(in.Text)}, nil
+func GenerateSlug(req GenerateSlugRequest) (GenerateSlugResponse, error) {
+	return GenerateSlugResponse{Slug: slug.Make(req.Text)}, nil
 }

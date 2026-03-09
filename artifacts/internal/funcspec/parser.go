@@ -12,12 +12,12 @@ import (
 
 // FuncSpec holds a parsed func spec file.
 type FuncSpec struct {
-	Package      string  // "auth"
-	Name         string  // "hashPassword"
-	Description  string  // @description value
-	InputFields  []Field // FuncNameInput struct fields
-	OutputFields []Field // FuncNameOutput struct fields
-	HasBody      bool    // true if function body is not just "// TODO: implement"
+	Package        string  // "auth"
+	Name           string  // "hashPassword"
+	Description    string  // @description value
+	RequestFields  []Field // FuncNameRequest struct fields
+	ResponseFields []Field // FuncNameResponse struct fields
+	HasBody        bool    // true if function body is not just "// TODO: implement"
 }
 
 // Field represents a struct field.
@@ -81,9 +81,9 @@ func ParseFile(path string) (*FuncSpec, error) {
 		return nil, nil // Not a func spec file.
 	}
 
-	// Extract Input/Output structs and function body.
-	expectedInput := ucFirst(spec.Name) + "Input"
-	expectedOutput := ucFirst(spec.Name) + "Output"
+	// Extract Request/Response structs and function body.
+	expectedRequest := ucFirst(spec.Name) + "Request"
+	expectedResponse := ucFirst(spec.Name) + "Response"
 
 	for _, decl := range f.Decls {
 		switch d := decl.(type) {
@@ -101,10 +101,10 @@ func ParseFile(path string) (*FuncSpec, error) {
 					continue
 				}
 				fields := extractFields(st)
-				if ts.Name.Name == expectedInput {
-					spec.InputFields = fields
-				} else if ts.Name.Name == expectedOutput {
-					spec.OutputFields = fields
+				if ts.Name.Name == expectedRequest {
+					spec.RequestFields = fields
+				} else if ts.Name.Name == expectedResponse {
+					spec.ResponseFields = fields
 				}
 			}
 		case *ast.FuncDecl:

@@ -11,40 +11,40 @@ import (
 // @func decrypt
 // @description AES-256-GCM 암호문을 복호화한다
 
-type DecryptInput struct {
+type DecryptRequest struct {
 	Ciphertext string // base64 인코딩
 	Key        string // 32바이트 hex
 }
 
-type DecryptOutput struct {
+type DecryptResponse struct {
 	Plaintext string
 }
 
-func Decrypt(in DecryptInput) (DecryptOutput, error) {
-	data, err := base64.StdEncoding.DecodeString(in.Ciphertext)
+func Decrypt(req DecryptRequest) (DecryptResponse, error) {
+	data, err := base64.StdEncoding.DecodeString(req.Ciphertext)
 	if err != nil {
-		return DecryptOutput{}, err
+		return DecryptResponse{}, err
 	}
-	keyBytes, err := hex.DecodeString(in.Key)
+	keyBytes, err := hex.DecodeString(req.Key)
 	if err != nil {
-		return DecryptOutput{}, err
+		return DecryptResponse{}, err
 	}
 	block, err := aes.NewCipher(keyBytes)
 	if err != nil {
-		return DecryptOutput{}, err
+		return DecryptResponse{}, err
 	}
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return DecryptOutput{}, err
+		return DecryptResponse{}, err
 	}
 	nonceSize := gcm.NonceSize()
 	if len(data) < nonceSize {
-		return DecryptOutput{}, fmt.Errorf("ciphertext too short")
+		return DecryptResponse{}, fmt.Errorf("ciphertext too short")
 	}
 	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return DecryptOutput{}, err
+		return DecryptResponse{}, err
 	}
-	return DecryptOutput{Plaintext: string(plaintext)}, nil
+	return DecryptResponse{Plaintext: string(plaintext)}, nil
 }

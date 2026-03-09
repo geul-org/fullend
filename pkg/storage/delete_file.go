@@ -10,23 +10,23 @@ import (
 // @func deleteFile
 // @description S3 호환 스토리지에서 파일을 삭제한다
 
-type DeleteFileInput struct {
+type DeleteFileRequest struct {
 	Bucket   string
 	Key      string
 	Endpoint string
 	Region   string
 }
 
-type DeleteFileOutput struct{}
+type DeleteFileResponse struct{}
 
-func DeleteFile(in DeleteFileInput) (DeleteFileOutput, error) {
-	client, err := newS3Client(in.Endpoint, in.Region)
+func DeleteFile(req DeleteFileRequest) (DeleteFileResponse, error) {
+	client, err := newS3Client(req.Endpoint, req.Region)
 	if err != nil {
-		return DeleteFileOutput{}, err
+		return DeleteFileResponse{}, err
 	}
 	_, err = client.DeleteObject(context.Background(), &s3.DeleteObjectInput{
-		Bucket: aws.String(in.Bucket),
-		Key:    aws.String(in.Key),
+		Bucket: aws.String(req.Bucket),
+		Key:    aws.String(req.Key),
 	})
-	return DeleteFileOutput{}, err
+	return DeleteFileResponse{}, err
 }

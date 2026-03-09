@@ -125,7 +125,7 @@ Individual tools (SSaC, STML) validate within their own layer. fullend catches m
 - **Policy ↔ States** — state transition events with authorize have matching Rego rules
 - **Scenario ↔ OpenAPI** — operationIds, methods, and request fields match
 - **Scenario ↔ States** — step order follows state transition rules
-- **Func ↔ SSaC** — @func references have matching implementations
+- **Func ↔ SSaC** — @func references have matching implementations, param count matches Request fields, positional types match (via DDL/OpenAPI), result/response consistency
 - **STML ↔ SSaC** (indirect) — both reference the same OpenAPI operationIds
 
 ## Runtime Testing
