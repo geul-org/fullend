@@ -104,8 +104,8 @@ fullend ships with built-in function implementations that can be used via SSaC `
 | `text` | `generateSlug` | Unicode to URL-safe slug |
 | `text` | `sanitizeHTML` | XSS prevention HTML sanitization |
 | `text` | `truncateText` | Unicode-safe text truncation |
-| `image` | `resizeImage` | Image resize with format conversion |
-| `image` | `generateThumbnail` | Square crop thumbnail generation |
+| `image` | `ogImage` | OG image generation (1200x630, PNG) |
+| `image` | `thumbnail` | Thumbnail generation (200x200, PNG) |
 
 Projects can override these by providing custom implementations in `specs/<project>/func/<pkg>/`.
 

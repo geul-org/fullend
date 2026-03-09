@@ -232,8 +232,8 @@ fullend ships with built-in default implementations in `pkg/`:
 
 | Function | Description | Input | Output |
 |---|---|---|---|
-| `resizeImage` | 이미지 리사이즈 | `{ Data, Width, Height, Format }` | `{ Data }` |
-| `generateThumbnail` | 정사각형 썸네일 생성 | `{ Data, Size }` | `{ Data }` |
+| `ogImage` | OG 이미지 생성 (1200x630, PNG) | `{ Data }` | `{ Data }` |
+| `thumbnail` | 썸네일 생성 (200x200, PNG) | `{ Data }` | `{ Data }` |
 
 ### SSaC Usage
 
