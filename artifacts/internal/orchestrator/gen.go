@@ -5,11 +5,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
-	oapicodegen "github.com/oapi-codegen/oapi-codegen/v2/pkg/codegen"
-	oapiutil "github.com/oapi-codegen/oapi-codegen/v2/pkg/util"
-	sqlccli "github.com/sqlc-dev/sqlc/pkg/cli"
+	"github.com/getkin/kin-openapi/openapi3"
 
+	"github.com/geul-org/fullend/artifacts/internal/gluegen"
 	"github.com/geul-org/fullend/artifacts/internal/reporter"
 	ssacgenerator "github.com/geul-org/ssac/generator"
 	ssacparser "github.com/geul-org/ssac/parser"
@@ -21,6 +21,11 @@ import (
 // Gen runs validate first, then generates code from all detected SSOTs.
 // Returns the validate report (with gen steps appended) and whether gen succeeded.
 func Gen(specsDir, artifactsDir string) (*reporter.Report, bool) {
+	return GenWith(DefaultProfile(), specsDir, artifactsDir)
+}
+
+// GenWith runs code generation with the specified TargetProfile.
+func GenWith(profile *TargetProfile, specsDir, artifactsDir string) (*reporter.Report, bool) {
 	detected, err := DetectSSOTs(specsDir)
 	if err != nil {
 		report := &reporter.Report{}
@@ -68,28 +73,36 @@ func Gen(specsDir, artifactsDir string) (*reporter.Report, bool) {
 		return report, false
 	}
 
-	// 2. sqlc generate (Go import)
+	// 2. sqlc generate (exec) — auto-generate sqlc.yaml if needed.
 	if _, ok := has[KindDDL]; ok {
-		report.Steps = append(report.Steps, genSqlc(specsDir))
+		report.Steps = append(report.Steps, genSqlc(specsDir, artifactsDir))
 	}
 
-	// 3. oapi-codegen (Go import)
+	// 3. oapi-codegen (exec) → backend/internal/api/
 	if _, ok := has[KindOpenAPI]; ok {
 		report.Steps = append(report.Steps, genOpenAPI(specsDir, artifactsDir))
 	}
 
-	// 4. SSaC Generate (service functions)
-	// 5. SSaC GenerateModelInterfaces
+	// 4. SSaC Generate → backend/internal/service/
+	// 5. SSaC GenerateModelInterfaces → backend/internal/model/
 	if d, ok := has[KindSSaC]; ok {
-		report.Steps = append(report.Steps, genSSaC(specsDir, d.Path, artifactsDir)...)
+		report.Steps = append(report.Steps, genSSaC(profile, specsDir, d.Path, artifactsDir)...)
 	}
 
-	// 6. STML Generate (React TSX)
+	// 6. STML Generate → frontend/src/pages/
+	var stmlDeps map[string]string
+	var stmlPages []string
+	var stmlPageOps map[string]string
 	if d, ok := has[KindSTML]; ok {
-		report.Steps = append(report.Steps, genSTML(specsDir, d.Path, artifactsDir))
+		var step reporter.StepResult
+		step, stmlDeps, stmlPages, stmlPageOps = genSTML(profile, specsDir, d.Path, artifactsDir)
+		report.Steps = append(report.Steps, step)
 	}
 
-	// 7. terraform fmt (외부 도구, 선택)
+	// 7. Glue code generation (Server struct + main.go + frontend setup)
+	report.Steps = append(report.Steps, genGlue(specsDir, artifactsDir, has, stmlDeps, stmlPages, stmlPageOps))
+
+	// 8. terraform fmt (외부 도구, 선택)
 	if _, ok := has[KindTerraform]; ok {
 		if terraformAvailable {
 			report.Steps = append(report.Steps, genTerraform(specsDir))
@@ -114,18 +127,31 @@ func Gen(specsDir, artifactsDir string) (*reporter.Report, bool) {
 	return report, genOk
 }
 
-func genSqlc(specsDir string) reporter.StepResult {
+func genSqlc(specsDir, artifactsDir string) reporter.StepResult {
 	step := reporter.StepResult{Name: "sqlc"}
-	configPath := filepath.Join(specsDir, "sqlc.yaml")
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+
+	// Auto-generate sqlc.yaml if not present.
+	configPath, err := generateSqlcConfig(specsDir, artifactsDir)
+	if err != nil {
 		step.Status = reporter.Skip
-		step.Summary = "sqlc.yaml not found, skipped"
+		step.Summary = err.Error()
 		return step
 	}
-	code := sqlccli.Run([]string{"generate", "-f", configPath})
-	if code != 0 {
-		step.Status = reporter.Fail
-		step.Errors = append(step.Errors, fmt.Sprintf("sqlc generate failed (exit %d)", code))
+
+	res := RunExec("sqlc", "generate", "-f", configPath)
+	if res.Skipped {
+		step.Status = reporter.Skip
+		step.Summary = "sqlc 미설치, 스킵"
+		step.Errors = append(step.Errors, "[WARN] sqlc가 설치되어 있지 않습니다 — go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest")
+		return step
+	}
+	if res.Err != nil {
+		step.Status = reporter.Skip
+		step.Summary = "sqlc generate 실패, 스킵"
+		step.Errors = append(step.Errors, fmt.Sprintf("[WARN] %v", res.Err))
+		if res.Stderr != "" {
+			step.Errors = append(step.Errors, res.Stderr)
+		}
 		return step
 	}
 	step.Status = reporter.Pass
@@ -137,14 +163,7 @@ func genOpenAPI(specsDir, artifactsDir string) reporter.StepResult {
 	step := reporter.StepResult{Name: "oapi-gen"}
 	apiPath := filepath.Join(specsDir, "api", "openapi.yaml")
 
-	spec, err := oapiutil.LoadSwagger(apiPath)
-	if err != nil {
-		step.Status = reporter.Fail
-		step.Errors = append(step.Errors, fmt.Sprintf("OpenAPI load error: %v", err))
-		return step
-	}
-
-	outDir := filepath.Join(artifactsDir, "backend", "api")
+	outDir := filepath.Join(artifactsDir, "backend", "internal", "api")
 	if err := os.MkdirAll(outDir, 0755); err != nil {
 		step.Status = reporter.Fail
 		step.Errors = append(step.Errors, fmt.Sprintf("cannot create dir: %v", err))
@@ -152,38 +171,31 @@ func genOpenAPI(specsDir, artifactsDir string) reporter.StepResult {
 	}
 
 	// Generate types.
-	typesCfg := oapicodegen.Configuration{
-		PackageName: "api",
-		Generate:    oapicodegen.GenerateOptions{Models: true},
-	}
-	typesCfg = typesCfg.UpdateDefaults()
-	typesCode, err := oapicodegen.Generate(spec, typesCfg)
-	if err != nil {
+	typesOut := filepath.Join(outDir, "types.gen.go")
+	res := RunExec("oapi-codegen", "-package", "api", "-generate", "types", "-o", typesOut, apiPath)
+	if res.Skipped {
 		step.Status = reporter.Fail
-		step.Errors = append(step.Errors, fmt.Sprintf("oapi-codegen types error: %v", err))
+		step.Errors = append(step.Errors, "oapi-codegen이 설치되어 있지 않습니다 — go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest")
 		return step
 	}
-	if err := os.WriteFile(filepath.Join(outDir, "types.gen.go"), []byte(typesCode), 0644); err != nil {
+	if res.Err != nil {
 		step.Status = reporter.Fail
-		step.Errors = append(step.Errors, fmt.Sprintf("write types.gen.go error: %v", err))
+		step.Errors = append(step.Errors, fmt.Sprintf("oapi-codegen types error: %v", res.Err))
+		if res.Stderr != "" {
+			step.Errors = append(step.Errors, res.Stderr)
+		}
 		return step
 	}
 
 	// Generate server (net/http std).
-	serverCfg := oapicodegen.Configuration{
-		PackageName: "api",
-		Generate:    oapicodegen.GenerateOptions{StdHTTPServer: true},
-	}
-	serverCfg = serverCfg.UpdateDefaults()
-	serverCode, err := oapicodegen.Generate(spec, serverCfg)
-	if err != nil {
+	serverOut := filepath.Join(outDir, "server.gen.go")
+	res = RunExec("oapi-codegen", "-package", "api", "-generate", "std-http-server", "-o", serverOut, apiPath)
+	if res.Err != nil {
 		step.Status = reporter.Fail
-		step.Errors = append(step.Errors, fmt.Sprintf("oapi-codegen server error: %v", err))
-		return step
-	}
-	if err := os.WriteFile(filepath.Join(outDir, "server.gen.go"), []byte(serverCode), 0644); err != nil {
-		step.Status = reporter.Fail
-		step.Errors = append(step.Errors, fmt.Sprintf("write server.gen.go error: %v", err))
+		step.Errors = append(step.Errors, fmt.Sprintf("oapi-codegen server error: %v", res.Err))
+		if res.Stderr != "" {
+			step.Errors = append(step.Errors, res.Stderr)
+		}
 		return step
 	}
 
@@ -192,7 +204,7 @@ func genOpenAPI(specsDir, artifactsDir string) reporter.StepResult {
 	return step
 }
 
-func genSSaC(specsDir, serviceDir, artifactsDir string) []reporter.StepResult {
+func genSSaC(profile *TargetProfile, specsDir, serviceDir, artifactsDir string) []reporter.StepResult {
 	var steps []reporter.StepResult
 
 	funcs, err := ssacparser.ParseDir(serviceDir)
@@ -215,8 +227,8 @@ func genSSaC(specsDir, serviceDir, artifactsDir string) []reporter.StepResult {
 		return steps
 	}
 
-	// Generate service functions.
-	serviceOutDir := filepath.Join(artifactsDir, "backend", "service")
+	// Generate service functions → backend/internal/service/
+	serviceOutDir := filepath.Join(artifactsDir, "backend", "internal", "service")
 	if err := os.MkdirAll(serviceOutDir, 0755); err != nil {
 		steps = append(steps, reporter.StepResult{
 			Name:   "ssac-gen",
@@ -227,7 +239,7 @@ func genSSaC(specsDir, serviceDir, artifactsDir string) []reporter.StepResult {
 	}
 
 	step := reporter.StepResult{Name: "ssac-gen"}
-	if err := ssacgenerator.Generate(funcs, serviceOutDir, st); err != nil {
+	if err := ssacgenerator.GenerateWith(profile.Backend, funcs, serviceOutDir, st); err != nil {
 		step.Status = reporter.Fail
 		step.Errors = append(step.Errors, fmt.Sprintf("SSaC generate error: %v", err))
 	} else {
@@ -236,8 +248,9 @@ func genSSaC(specsDir, serviceDir, artifactsDir string) []reporter.StepResult {
 	}
 	steps = append(steps, step)
 
-	// Generate model interfaces.
-	modelOutDir := filepath.Join(artifactsDir, "backend", "model")
+	// Generate model interfaces → backend/internal/model/
+	// SSaC writes to outDir/model/, so pass backend/internal/ as outDir.
+	modelOutDir := filepath.Join(artifactsDir, "backend", "internal")
 	if err := os.MkdirAll(modelOutDir, 0755); err != nil {
 		steps = append(steps, reporter.StepResult{
 			Name:   "ssac-model",
@@ -248,7 +261,7 @@ func genSSaC(specsDir, serviceDir, artifactsDir string) []reporter.StepResult {
 	}
 
 	modelStep := reporter.StepResult{Name: "ssac-model"}
-	if err := ssacgenerator.GenerateModelInterfaces(funcs, st, modelOutDir); err != nil {
+	if err := profile.Backend.GenerateModelInterfaces(funcs, st, modelOutDir); err != nil {
 		modelStep.Status = reporter.Fail
 		modelStep.Errors = append(modelStep.Errors, fmt.Sprintf("SSaC model interface error: %v", err))
 	} else {
@@ -260,32 +273,115 @@ func genSSaC(specsDir, serviceDir, artifactsDir string) []reporter.StepResult {
 	return steps
 }
 
-func genSTML(specsDir, frontendDir, artifactsDir string) reporter.StepResult {
+func genSTML(profile *TargetProfile, specsDir, frontendDir, artifactsDir string) (reporter.StepResult, map[string]string, []string, map[string]string) {
 	step := reporter.StepResult{Name: "stml-gen"}
 
 	pages, err := stmlparser.ParseDir(frontendDir)
 	if err != nil {
 		step.Status = reporter.Fail
 		step.Errors = append(step.Errors, fmt.Sprintf("STML parse error: %v", err))
-		return step
+		return step, nil, nil, nil
 	}
 
-	outDir := filepath.Join(artifactsDir, "frontend")
+	// Output to frontend/src/pages/
+	outDir := filepath.Join(artifactsDir, "frontend", "src", "pages")
 	if err := os.MkdirAll(outDir, 0755); err != nil {
 		step.Status = reporter.Fail
 		step.Errors = append(step.Errors, fmt.Sprintf("cannot create dir: %v", err))
-		return step
+		return step, nil, nil, nil
 	}
 
-	if err := stmlgenerator.Generate(pages, specsDir, outDir); err != nil {
+	result, err := stmlgenerator.GenerateWith(profile.Frontend, pages, specsDir, outDir, stmlgenerator.GenerateOptions{
+		APIImportPath: "../api",
+		UseClient:     false,
+	})
+	if err != nil {
 		step.Status = reporter.Fail
 		step.Errors = append(step.Errors, fmt.Sprintf("STML generate error: %v", err))
+		return step, nil, nil, nil
+	}
+
+	// Collect generated page names and primary operationIDs for glue-gen.
+	var pageNames []string
+	pageOps := make(map[string]string)
+	for _, p := range pages {
+		pageNames = append(pageNames, p.Name)
+		// Determine primary operationID from first fetch or first action.
+		// PageSpec.Name already includes "-page" suffix (e.g. "login-page").
+		if len(p.Fetches) > 0 {
+			pageOps[p.Name] = p.Fetches[0].OperationID
+		} else if len(p.Actions) > 0 {
+			pageOps[p.Name] = p.Actions[0].OperationID
+		}
+	}
+
+	step.Status = reporter.Pass
+	step.Summary = fmt.Sprintf("%d pages generated", result.Pages)
+	return step, result.Dependencies, pageNames, pageOps
+}
+
+func genGlue(specsDir, artifactsDir string, has map[SSOTKind]DetectedSSOT, stmlDeps map[string]string, stmlPages []string, stmlPageOps map[string]string) reporter.StepResult {
+	step := reporter.StepResult{Name: "glue-gen"}
+
+	// Determine module path.
+	modulePath := determineModulePath(artifactsDir)
+
+	input := &gluegen.GlueInput{
+		ArtifactsDir: artifactsDir,
+		SpecsDir:     specsDir,
+		ModulePath:   modulePath,
+		STMLDeps:     stmlDeps,
+		STMLPages:    stmlPages,
+		STMLPageOps:  stmlPageOps,
+	}
+
+	// Load OpenAPI doc.
+	if _, ok := has[KindOpenAPI]; ok {
+		apiPath := filepath.Join(specsDir, "api", "openapi.yaml")
+		doc, err := openapi3.NewLoader().LoadFromFile(apiPath)
+		if err == nil {
+			input.OpenAPIDoc = doc
+		}
+	}
+
+	// Load service funcs.
+	if d, ok := has[KindSSaC]; ok {
+		funcs, err := ssacparser.ParseDir(d.Path)
+		if err == nil {
+			input.ServiceFuncs = funcs
+		}
+	}
+
+	// Load symbol table.
+	st, err := ssacvalidator.LoadSymbolTable(specsDir)
+	if err == nil {
+		input.SymbolTable = st
+	}
+
+	if err := gluegen.Generate(input); err != nil {
+		step.Status = reporter.Fail
+		step.Errors = append(step.Errors, fmt.Sprintf("glue-gen error: %v", err))
 		return step
 	}
 
 	step.Status = reporter.Pass
-	step.Summary = fmt.Sprintf("%d pages generated", len(pages))
+	step.Summary = "server + main.go + frontend setup generated"
 	return step
+}
+
+func determineModulePath(artifactsDir string) string {
+	// Check if backend/go.mod already exists.
+	goModPath := filepath.Join(artifactsDir, "backend", "go.mod")
+	if data, err := os.ReadFile(goModPath); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.HasPrefix(line, "module ") {
+				return strings.TrimSpace(strings.TrimPrefix(line, "module "))
+			}
+		}
+	}
+	// Derive from directory name.
+	base := filepath.Base(artifactsDir)
+	return base + "/backend"
 }
 
 func genTerraform(specsDir string) reporter.StepResult {
