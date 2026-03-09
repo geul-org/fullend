@@ -52,7 +52,7 @@ paths:
       x-filter:
         allowed: [category, level]
       x-include:
-        allowed: [user]
+        allowed: [instructor_id:users.id]
       responses:
         "200":
           description: 강의 목록
@@ -89,7 +89,7 @@ paths:
             type: integer
             format: int64
       x-include:
-        allowed: [user, lesson]
+        allowed: [instructor_id:users.id]
       responses:
         "200":
           description: 강의 상세
@@ -266,7 +266,7 @@ paths:
         default: created_at
         direction: desc
       x-include:
-        allowed: [course]
+        allowed: [course_id:courses.id]
       responses:
         "200":
           description: 내 수강 목록

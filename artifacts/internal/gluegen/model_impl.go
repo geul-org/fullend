@@ -13,9 +13,20 @@ import (
 
 // ddlColumn represents a column parsed from a CREATE TABLE statement.
 type ddlColumn struct {
-	Name   string // e.g. "instructor_id"
-	GoName string // e.g. "InstructorID"
-	GoType string // e.g. "int64"
+	Name    string // e.g. "instructor_id"
+	GoName  string // e.g. "InstructorID"
+	GoType  string // e.g. "int64"
+	FKTable string // e.g. "users" — REFERENCES target table (empty if no FK)
+}
+
+// includeMapping represents a resolved x-include → DDL FK mapping (forward FK only).
+type includeMapping struct {
+	IncludeName string // "instructor" — derived from FK column (strip _id)
+	FieldName   string // "Instructor"
+	FieldType   string // "*User"
+	FKColumn    string // "instructor_id"
+	TargetTable string // "users"
+	TargetModel string // "User"
 }
 
 // ddlTable represents a parsed CREATE TABLE definition.
@@ -49,7 +60,7 @@ type ifaceParam struct {
 }
 
 // generateModelImpls generates model implementation files that use database/sql directly.
-func generateModelImpls(intDir string, models []string, modulePath, specsDir string, serviceFuncs []ssacparser.ServiceFunc) error {
+func generateModelImpls(intDir string, models []string, modulePath, specsDir string, serviceFuncs []ssacparser.ServiceFunc, modelIncludeSpecs map[string][]string) error {
 	if len(models) == 0 {
 		return nil
 	}
@@ -62,6 +73,18 @@ func generateModelImpls(intDir string, models []string, modulePath, specsDir str
 	// Parse DDL files to get table/column info.
 	tables := parseDDLFiles(specsDir)
 
+	// Resolve per-model includes against DDL FK.
+	includesByModel := make(map[string][]includeMapping)
+	for modelName, specs := range modelIncludeSpecs {
+		mappings, err := resolveIncludes(modelName, specs, tables)
+		if err != nil {
+			return fmt.Errorf("resolve includes for %s: %w", modelName, err)
+		}
+		if len(mappings) > 0 {
+			includesByModel[modelName] = mappings
+		}
+	}
+
 	// Parse query SQL files to get embedded SQL and metadata.
 	queriesByModel := parseQueryFiles(specsDir)
 
@@ -72,8 +95,13 @@ func generateModelImpls(intDir string, models []string, modulePath, specsDir str
 	seqTypeByModel := collectSeqTypes(serviceFuncs)
 
 	// Generate types.go from DDL.
-	if err := generateTypesFile(modelDir, models, tables); err != nil {
+	if err := generateTypesFile(modelDir, models, tables, includesByModel); err != nil {
 		return fmt.Errorf("types.go: %w", err)
+	}
+
+	// Generate queryopts.go (parseQueryOpts + SQL builders).
+	if err := generateQueryOpts(modelDir); err != nil {
+		return fmt.Errorf("queryopts.go: %w", err)
 	}
 
 	// Generate per-model implementation files.
@@ -82,8 +110,15 @@ func generateModelImpls(intDir string, models []string, modulePath, specsDir str
 		table := tables[m]
 		queries := queriesByModel[m]
 		seqTypes := seqTypeByModel[m]
-		if err := generateModelFile(modelDir, m, methods, table, queries, seqTypes); err != nil {
+		if err := generateModelFile(modelDir, m, methods, table, queries, seqTypes, includesByModel[m]); err != nil {
 			return fmt.Errorf("%s.go: %w", strings.ToLower(m), err)
+		}
+	}
+
+	// Generate include helpers if any model has includes.
+	if len(includesByModel) > 0 {
+		if err := generateIncludeHelpersFile(modelDir); err != nil {
+			return fmt.Errorf("include_helpers.go: %w", err)
 		}
 	}
 
@@ -140,7 +175,7 @@ func parseModelsGen(modelDir string) map[string][]ifaceMethod {
 }
 
 // generateTypesFile creates model/types.go with struct definitions from DDL columns.
-func generateTypesFile(modelDir string, models []string, tables map[string]*ddlTable) error {
+func generateTypesFile(modelDir string, models []string, tables map[string]*ddlTable, includesByModel map[string][]includeMapping) error {
 	var b strings.Builder
 	b.WriteString("package model\n\n")
 
@@ -175,6 +210,13 @@ func generateTypesFile(modelDir string, models []string, tables map[string]*ddlT
 		for _, col := range t.Columns {
 			b.WriteString(fmt.Sprintf("\t%-12s %s `json:\"%s\"`\n", col.GoName, col.GoType, col.Name))
 		}
+		if includes, ok := includesByModel[m]; ok && len(includes) > 0 {
+			b.WriteString("\n\t// Include fields\n")
+			for _, inc := range includes {
+				jsonTag := lcFirst(inc.FieldName)
+				b.WriteString(fmt.Sprintf("\t%-12s %s `json:\"%s,omitempty\"`\n", inc.FieldName, inc.FieldType, jsonTag))
+			}
+		}
 		b.WriteString("}\n")
 		if i < len(models)-1 {
 			b.WriteString("\n")
@@ -185,7 +227,7 @@ func generateTypesFile(modelDir string, models []string, tables map[string]*ddlT
 }
 
 // generateModelFile creates model/{model}.go with the implementation struct using *sql.DB.
-func generateModelFile(modelDir string, modelName string, methods []ifaceMethod, table *ddlTable, queries map[string]sqlcQuery, seqTypes map[string]string) error {
+func generateModelFile(modelDir string, modelName string, methods []ifaceMethod, table *ddlTable, queries map[string]sqlcQuery, seqTypes map[string]string, includes []includeMapping) error {
 	var b strings.Builder
 	lowerName := strings.ToLower(modelName)
 	implName := lowerName + "ModelImpl"
@@ -218,7 +260,13 @@ func generateModelFile(modelDir string, modelName string, methods []ifaceMethod,
 		b.WriteString("\n")
 		query := queries[method.Name]
 		seqType := seqTypes[method.Name]
-		generateMethodFromIface(&b, implName, modelName, method, &query, seqType, table)
+		generateMethodFromIface(&b, implName, modelName, method, &query, seqType, table, includes)
+	}
+
+	// Generate include helper methods.
+	for _, inc := range includes {
+		b.WriteString("\n")
+		generateIncludeHelper(&b, implName, modelName, inc)
 	}
 
 	fileName := lowerName + ".go"
@@ -247,7 +295,7 @@ func generateScanFunc(b *strings.Builder, modelName string, table *ddlTable) {
 }
 
 // generateMethodFromIface writes a single method implementation based on the interface signature.
-func generateMethodFromIface(b *strings.Builder, implName, modelName string, m ifaceMethod, query *sqlcQuery, seqType string, table *ddlTable) {
+func generateMethodFromIface(b *strings.Builder, implName, modelName string, m ifaceMethod, query *sqlcQuery, seqType string, table *ddlTable, includes []includeMapping) {
 	sqlStr := "-- TODO: " + m.Name
 	if query != nil && query.SQL != "" {
 		sqlStr = query.SQL
@@ -272,9 +320,41 @@ func generateMethodFromIface(b *strings.Builder, implName, modelName string, m i
 
 	switch {
 	case isList:
-		// List method: ([]Type, int, error)
+		// List method with dynamic SQL: ([]Type, int, error)
+		baseWhere := ""
+		baseArgCount := 0
+		if query != nil && query.SQL != "" {
+			baseWhere, baseArgCount = extractBaseWhere(query.SQL)
+		}
+
+		tableName := ""
+		if table != nil {
+			tableName = table.TableName
+		}
+
 		b.WriteString(fmt.Sprintf("func (m *%s) %s(%s) %s {\n", implName, m.Name, m.ParamSig, m.ReturnSig))
-		b.WriteString(fmt.Sprintf("\trows, err := m.db.QueryContext(context.Background(),\n\t\t%q%s)\n", sqlStr, callArgs))
+
+		// Build base args from non-opts params.
+		if len(callArgNames) > 0 {
+			b.WriteString(fmt.Sprintf("\tbaseArgs := []interface{}{%s}\n", strings.Join(callArgNames, ", ")))
+		}
+
+		// Count query.
+		b.WriteString(fmt.Sprintf("\tcountSQL, countArgs := BuildCountQuery(%q, %q, %d, opts)\n", tableName, baseWhere, baseArgCount))
+		if len(callArgNames) > 0 {
+			b.WriteString("\tcountArgs = append(baseArgs, countArgs...)\n")
+		}
+		b.WriteString("\tvar total int\n")
+		b.WriteString("\tif err := m.db.QueryRowContext(context.Background(), countSQL, countArgs...).Scan(&total); err != nil {\n")
+		b.WriteString("\t\treturn nil, 0, err\n")
+		b.WriteString("\t}\n\n")
+
+		// Select query.
+		b.WriteString(fmt.Sprintf("\tselectSQL, selectArgs := BuildSelectQuery(%q, %q, %d, opts)\n", tableName, baseWhere, baseArgCount))
+		if len(callArgNames) > 0 {
+			b.WriteString("\tselectArgs = append(baseArgs, selectArgs...)\n")
+		}
+		b.WriteString("\trows, err := m.db.QueryContext(context.Background(), selectSQL, selectArgs...)\n")
 		b.WriteString("\tif err != nil {\n")
 		b.WriteString("\t\treturn nil, 0, err\n")
 		b.WriteString("\t}\n")
@@ -287,7 +367,16 @@ func generateMethodFromIface(b *strings.Builder, implName, modelName string, m i
 		b.WriteString("\t\t}\n")
 		b.WriteString("\t\titems = append(items, *v)\n")
 		b.WriteString("\t}\n")
-		b.WriteString("\treturn items, len(items), nil\n")
+		// Include loading.
+		for _, inc := range includes {
+			b.WriteString(fmt.Sprintf("\tif containsStr(opts.Includes, %q) {\n", inc.IncludeName))
+			helperName := "include" + strings.ToUpper(inc.IncludeName[:1]) + inc.IncludeName[1:]
+			b.WriteString(fmt.Sprintf("\t\tif err := m.%s(items); err != nil {\n", helperName))
+			b.WriteString("\t\t\treturn nil, 0, err\n")
+			b.WriteString("\t\t}\n")
+			b.WriteString("\t}\n")
+		}
+		b.WriteString("\treturn items, total, nil\n")
 		b.WriteString("}\n")
 
 	case isFind || seqType == "get":
@@ -390,6 +479,7 @@ func parseDDLFiles(specsDir string) map[string]*ddlTable {
 	// Match column definitions: name TYPE(...) constraints
 	// Stop at lines starting with constraints or indexes.
 	colRe := regexp.MustCompile(`^\s+(\w+)\s+(BIGSERIAL|BIGINT|INT|INTEGER|VARCHAR\(\d+\)|TEXT|BOOLEAN|BOOL|TIMESTAMPTZ|TIMESTAMP)`)
+	fkRe := regexp.MustCompile(`REFERENCES\s+(\w+)\s*\(`)
 
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
@@ -424,10 +514,16 @@ func parseDDLFiles(specsDir string) map[string]*ddlTable {
 			colName := colMatch[1]
 			sqlType := strings.ToUpper(colMatch[2])
 
+			fkTable := ""
+			if fkMatch := fkRe.FindStringSubmatch(line); fkMatch != nil {
+				fkTable = fkMatch[1]
+			}
+
 			table.Columns = append(table.Columns, ddlColumn{
-				Name:   colName,
-				GoName: snakeToGo(colName),
-				GoType: sqlTypeToGo(sqlType),
+				Name:    colName,
+				GoName:  snakeToGo(colName),
+				GoType:  sqlTypeToGo(sqlType),
+				FKTable: fkTable,
 			})
 		}
 
@@ -603,4 +699,145 @@ func sqlTypeToGo(sqlType string) string {
 	default:
 		return "string"
 	}
+}
+
+// fkColumnToFieldName converts a FK column name to a Go struct field name.
+// "instructor_id" → "Instructor", "course_id" → "Course"
+func fkColumnToFieldName(colName string) string {
+	name := colName
+	if strings.HasSuffix(name, "_id") {
+		name = name[:len(name)-3]
+	}
+	return snakeToGo(name)
+}
+
+// resolveIncludes resolves x-include specs against DDL FK relationships.
+// Format: "column:table.column" (e.g. "instructor_id:users.id"). Forward FK only.
+func resolveIncludes(modelName string, includeSpecs []string, tables map[string]*ddlTable) ([]includeMapping, error) {
+	currentTable := tables[modelName]
+	if currentTable == nil {
+		return nil, nil
+	}
+
+	var mappings []includeMapping
+
+	for _, spec := range includeSpecs {
+		// Parse "instructor_id:users.id"
+		colonIdx := strings.Index(spec, ":")
+		if colonIdx <= 0 {
+			return nil, fmt.Errorf("invalid x-include format %q: expected 'column:table.column'", spec)
+		}
+		localColumn := spec[:colonIdx]
+		targetRef := spec[colonIdx+1:]
+
+		dotIdx := strings.Index(targetRef, ".")
+		if dotIdx <= 0 {
+			return nil, fmt.Errorf("invalid x-include format %q: expected 'column:table.column'", spec)
+		}
+		targetTable := targetRef[:dotIdx]
+
+		// Validate: localColumn exists in current table with FK to targetTable.
+		var fkCol *ddlColumn
+		for i, col := range currentTable.Columns {
+			if col.Name == localColumn {
+				if col.FKTable != targetTable {
+					return nil, fmt.Errorf("x-include %q: column %s.%s does not reference %s (references %q)",
+						spec, currentTable.TableName, localColumn, targetTable, col.FKTable)
+				}
+				fkCol = &currentTable.Columns[i]
+				break
+			}
+		}
+		if fkCol == nil {
+			return nil, fmt.Errorf("x-include %q: column %s not found in table %s",
+				spec, localColumn, currentTable.TableName)
+		}
+
+		includeName := strings.TrimSuffix(localColumn, "_id")
+		fieldName := fkColumnToFieldName(localColumn)
+		targetModelName := singularize(targetTable)
+
+		mappings = append(mappings, includeMapping{
+			IncludeName: includeName,
+			FieldName:   fieldName,
+			FieldType:   "*" + targetModelName,
+			FKColumn:    localColumn,
+			TargetTable: targetTable,
+			TargetModel: targetModelName,
+		})
+	}
+
+	return mappings, nil
+}
+
+// generateIncludeHelper generates a forward FK include helper method for a model.
+func generateIncludeHelper(b *strings.Builder, implName, modelName string, inc includeMapping) {
+	helperName := "include" + strings.ToUpper(inc.IncludeName[:1]) + inc.IncludeName[1:]
+	fkGoName := snakeToGo(inc.FKColumn)
+
+	b.WriteString(fmt.Sprintf("func (m *%s) %s(items []%s) error {\n", implName, helperName, modelName))
+	b.WriteString("\tids := make(map[int64]bool)\n")
+	b.WriteString("\tfor _, item := range items {\n")
+	b.WriteString(fmt.Sprintf("\t\tids[item.%s] = true\n", fkGoName))
+	b.WriteString("\t}\n")
+	b.WriteString("\tif len(ids) == 0 {\n")
+	b.WriteString("\t\treturn nil\n")
+	b.WriteString("\t}\n")
+	b.WriteString("\tkeys := collectInt64s(ids)\n")
+	b.WriteString("\tplaceholders := buildPlaceholders(len(keys))\n")
+	b.WriteString("\targs := int64sToArgs(keys)\n")
+	b.WriteString(fmt.Sprintf("\trows, err := m.db.QueryContext(context.Background(),\n\t\t\"SELECT * FROM %s WHERE id IN (\"+placeholders+\")\", args...)\n", inc.TargetTable))
+	b.WriteString("\tif err != nil {\n")
+	b.WriteString("\t\treturn err\n")
+	b.WriteString("\t}\n")
+	b.WriteString("\tdefer rows.Close()\n")
+	b.WriteString(fmt.Sprintf("\tlookup := make(map[int64]*%s)\n", inc.TargetModel))
+	b.WriteString("\tfor rows.Next() {\n")
+	b.WriteString(fmt.Sprintf("\t\tv, err := scan%s(rows)\n", inc.TargetModel))
+	b.WriteString("\t\tif err != nil {\n")
+	b.WriteString("\t\t\treturn err\n")
+	b.WriteString("\t\t}\n")
+	b.WriteString("\t\tlookup[v.ID] = v\n")
+	b.WriteString("\t}\n")
+	b.WriteString("\tfor i := range items {\n")
+	b.WriteString(fmt.Sprintf("\t\titems[i].%s = lookup[items[i].%s]\n", inc.FieldName, fkGoName))
+	b.WriteString("\t}\n")
+	b.WriteString("\treturn nil\n")
+	b.WriteString("}\n")
+}
+
+// generateIncludeHelpersFile creates model/include_helpers.go with shared utility functions.
+func generateIncludeHelpersFile(modelDir string) error {
+	var b strings.Builder
+	b.WriteString("package model\n\n")
+	b.WriteString("import (\n")
+	b.WriteString("\t\"fmt\"\n")
+	b.WriteString("\t\"strings\"\n")
+	b.WriteString(")\n\n")
+
+	b.WriteString("func collectInt64s(ids map[int64]bool) []int64 {\n")
+	b.WriteString("\tkeys := make([]int64, 0, len(ids))\n")
+	b.WriteString("\tfor k := range ids {\n")
+	b.WriteString("\t\tkeys = append(keys, k)\n")
+	b.WriteString("\t}\n")
+	b.WriteString("\treturn keys\n")
+	b.WriteString("}\n\n")
+
+	b.WriteString("func buildPlaceholders(n int) string {\n")
+	b.WriteString("\tps := make([]string, n)\n")
+	b.WriteString("\tfor i := range ps {\n")
+	b.WriteString("\t\tps[i] = fmt.Sprintf(\"$%d\", i+1)\n")
+	b.WriteString("\t}\n")
+	b.WriteString("\treturn strings.Join(ps, \", \")\n")
+	b.WriteString("}\n\n")
+
+	b.WriteString("func int64sToArgs(keys []int64) []interface{} {\n")
+	b.WriteString("\targs := make([]interface{}, len(keys))\n")
+	b.WriteString("\tfor i, k := range keys {\n")
+	b.WriteString("\t\targs[i] = k\n")
+	b.WriteString("\t}\n")
+	b.WriteString("\treturn args\n")
+	b.WriteString("}\n")
+
+	return os.WriteFile(filepath.Join(modelDir, "include_helpers.go"), []byte(b.String()), 0644)
 }

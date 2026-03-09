@@ -144,28 +144,52 @@ func checkXInclude(op *openapi3.Operation, st *ssacvalidator.SymbolTable, ctx st
 		return errs
 	}
 
-	for _, resource := range includeExt.Allowed {
-		refTable := resolveTableName(resource, st)
-		if refTable == "" {
-			guessTable := strings.ToLower(resource) + "s"
+	for _, spec := range includeExt.Allowed {
+		// Parse "column:table.column" format (e.g. "instructor_id:users.id").
+		colonIdx := strings.Index(spec, ":")
+		if colonIdx <= 0 {
 			errs = append(errs, CrossError{
 				Rule:       "x-include ↔ DDL",
 				Context:    ctx,
-				Message:    fmt.Sprintf("x-include resource %q has no matching DDL table", resource),
-				Suggestion: fmt.Sprintf("DDL에 추가: CREATE TABLE %s (...);", guessTable),
+				Message:    fmt.Sprintf("x-include %q: invalid format, expected 'column:table.column'", spec),
+				Suggestion: "예시: instructor_id:users.id",
+			})
+			continue
+		}
+		localCol := spec[:colonIdx]
+		targetRef := spec[colonIdx+1:]
+		dotIdx := strings.Index(targetRef, ".")
+		if dotIdx <= 0 {
+			errs = append(errs, CrossError{
+				Rule:       "x-include ↔ DDL",
+				Context:    ctx,
+				Message:    fmt.Sprintf("x-include %q: invalid format, expected 'column:table.column'", spec),
+				Suggestion: "예시: instructor_id:users.id",
+			})
+			continue
+		}
+		targetTable := targetRef[:dotIdx]
+
+		// Validate target table exists.
+		if _, ok := st.DDLTables[targetTable]; !ok {
+			errs = append(errs, CrossError{
+				Rule:       "x-include ↔ DDL",
+				Context:    ctx,
+				Message:    fmt.Sprintf("x-include %q: target table %q not found in DDL", spec, targetTable),
+				Suggestion: fmt.Sprintf("DDL에 추가: CREATE TABLE %s (...);", targetTable),
 			})
 			continue
 		}
 
-		// If we know the primary table, verify FK relationship.
+		// Validate FK column exists in primary table and references target.
 		if primaryTable != "" {
-			if !hasFKTo(primaryTable, refTable, st) {
+			if !hasFKColumn(primaryTable, localCol, targetTable, st) {
 				errs = append(errs, CrossError{
 					Rule:       "x-include ↔ DDL FK",
 					Context:    ctx,
-					Message:    fmt.Sprintf("x-include resource %q (→ %s): no FK from %s to %s", resource, refTable, primaryTable, refTable),
+					Message:    fmt.Sprintf("x-include %q: column %s.%s does not reference %s", spec, primaryTable, localCol, targetTable),
 					Level:      "WARNING",
-					Suggestion: fmt.Sprintf("DDL에 추가: ALTER TABLE %s ADD COLUMN %s_id BIGINT REFERENCES %s(id);", primaryTable, strings.TrimSuffix(refTable, "s"), refTable),
+					Suggestion: fmt.Sprintf("DDL에 추가: ALTER TABLE %s ADD COLUMN %s BIGINT REFERENCES %s(id);", primaryTable, localCol, targetTable),
 				})
 			}
 		}
@@ -227,6 +251,20 @@ func hasFKTo(srcTable, dstTable string, st *ssacvalidator.SymbolTable) bool {
 	}
 	for _, fk := range table.ForeignKeys {
 		if fk.RefTable == dstTable {
+			return true
+		}
+	}
+	return false
+}
+
+// hasFKColumn checks if srcTable has a FK column named colName that references dstTable.
+func hasFKColumn(srcTable, colName, dstTable string, st *ssacvalidator.SymbolTable) bool {
+	table, ok := st.DDLTables[srcTable]
+	if !ok {
+		return false
+	}
+	for _, fk := range table.ForeignKeys {
+		if fk.Column == colName && fk.RefTable == dstTable {
 			return true
 		}
 	}

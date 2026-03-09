@@ -38,37 +38,50 @@ func Generate(input *GlueInput) error {
 		return fmt.Errorf("create internal dir: %w", err)
 	}
 
-	// 1. Collect model names used by service functions.
 	models := collectModels(input.ServiceFuncs)
-	funcs := collectFuncs(input.ServiceFuncs)
-	components := collectComponents(input.ServiceFuncs)
+	xConfigs := extractXConfigs(input.OpenAPIDoc)
 
-	// 2. Transform service files: standalone → struct methods.
-	if err := transformServiceFiles(intDir, models, funcs, components, input.ModulePath); err != nil {
-		return fmt.Errorf("service transform: %w", err)
+	if hasDomains(input.ServiceFuncs) {
+		// Domain mode: per-domain Handler + central Server.
+		allFuncs := collectFuncs(input.ServiceFuncs)
+		allComponents := collectComponents(input.ServiceFuncs)
+
+		if err := transformServiceFilesWithDomains(intDir, input.ServiceFuncs, models, allFuncs, allComponents, input.ModulePath, xConfigs); err != nil {
+			return fmt.Errorf("service transform (domain): %w", err)
+		}
+		if err := generateAuthStubWithDomains(intDir, input.ModulePath); err != nil {
+			return fmt.Errorf("auth (domain): %w", err)
+		}
+		if err := generateServerStructWithDomains(intDir, input.ServiceFuncs, input.ModulePath, input.OpenAPIDoc); err != nil {
+			return fmt.Errorf("server.go (domain): %w", err)
+		}
+		if err := generateMainWithDomains(input.ArtifactsDir, input.ServiceFuncs, input.ModulePath); err != nil {
+			return fmt.Errorf("main.go (domain): %w", err)
+		}
+	} else {
+		// Flat mode: single Server with all fields (unchanged).
+		funcs := collectFuncs(input.ServiceFuncs)
+		components := collectComponents(input.ServiceFuncs)
+
+		if err := transformServiceFiles(intDir, models, funcs, components, input.ModulePath, xConfigs); err != nil {
+			return fmt.Errorf("service transform: %w", err)
+		}
+		if err := generateServerStruct(intDir, models, funcs, components, input.ModulePath, input.OpenAPIDoc); err != nil {
+			return fmt.Errorf("server.go: %w", err)
+		}
+		if err := generateAuthStub(intDir); err != nil {
+			return fmt.Errorf("auth.go: %w", err)
+		}
+		if err := generateMain(input.ArtifactsDir, models, input.ModulePath); err != nil {
+			return fmt.Errorf("main.go: %w", err)
+		}
 	}
 
-	// 3. Generate server.go (Server struct).
-	if err := generateServerStruct(intDir, models, funcs, components, input.ModulePath, input.OpenAPIDoc); err != nil {
-		return fmt.Errorf("server.go: %w", err)
-	}
-
-	// 4. Generate auth.go stub.
-	if err := generateAuthStub(intDir); err != nil {
-		return fmt.Errorf("auth.go: %w", err)
-	}
-
-	// 5. Generate cmd/main.go.
-	if err := generateMain(input.ArtifactsDir, models, input.ModulePath); err != nil {
-		return fmt.Errorf("main.go: %w", err)
-	}
-
-	// 5.5. Generate model implementations (sqlc wrapper).
-	if err := generateModelImpls(intDir, models, input.ModulePath, input.SpecsDir, input.ServiceFuncs); err != nil {
+	// Shared: model implementations + frontend (same for both modes).
+	modelIncludeSpecs := collectModelIncludes(input.OpenAPIDoc, input.ServiceFuncs)
+	if err := generateModelImpls(intDir, models, input.ModulePath, input.SpecsDir, input.ServiceFuncs, modelIncludeSpecs); err != nil {
 		return fmt.Errorf("model impl: %w", err)
 	}
-
-	// 6. Generate frontend setup (React + Vite).
 	if err := generateFrontendSetup(input.ArtifactsDir, input.OpenAPIDoc, input.STMLDeps, input.STMLPages, input.STMLPageOps); err != nil {
 		return fmt.Errorf("frontend setup: %w", err)
 	}
@@ -135,7 +148,7 @@ func collectComponents(funcs []ssacparser.ServiceFunc) []string {
 
 // transformServiceFiles reads each .go file in internal/service/,
 // converts standalone functions to Server methods, and writes them back in place.
-func transformServiceFiles(intDir string, models, funcs, components []string, modulePath string) error {
+func transformServiceFiles(intDir string, models, funcs, components []string, modulePath string, xConfigs map[string]string) error {
 	serviceDir := filepath.Join(intDir, "service")
 	entries, err := os.ReadDir(serviceDir)
 	if err != nil {
@@ -155,7 +168,7 @@ func transformServiceFiles(intDir string, models, funcs, components []string, mo
 			return err
 		}
 
-		transformed := transformSource(string(src), models, funcs, components, modulePath)
+		transformed := transformSource(string(src), models, funcs, components, modulePath, xConfigs, false)
 		if err := os.WriteFile(path, []byte(transformed), 0644); err != nil {
 			return err
 		}
@@ -164,40 +177,57 @@ func transformServiceFiles(intDir string, models, funcs, components []string, mo
 	return nil
 }
 
-// transformSource converts a standalone function source to a Server method.
-func transformSource(src string, models, funcs, components []string, modulePath string) string {
-	// Add receiver to function declaration.
-	src = strings.Replace(src, "\nfunc ", "\nfunc (s *Server) ", 1)
+// transformSource converts a standalone function source to a struct method.
+// isDomain: false → (s *Server) receiver, true → (h *Handler) receiver.
+func transformSource(src string, models, funcs, components []string, modulePath string, xConfigs map[string]string, isDomain bool) string {
+	rcv := "s"
+	rcvType := "*Server"
+	if isDomain {
+		rcv = "h"
+		rcvType = "*Handler"
+	}
 
-	// Replace model references: courseModel → s.CourseModel
+	// Add receiver to function declaration.
+	src = strings.Replace(src, "\nfunc ", "\nfunc ("+rcv+" "+rcvType+") ", 1)
+
+	// Replace model references: courseModel → {rcv}.CourseModel
 	for _, m := range models {
 		varName := lcFirst(m) + "Model"
 		fieldName := ucFirst(varName)
-		src = strings.ReplaceAll(src, varName+".", "s."+fieldName+".")
+		src = strings.ReplaceAll(src, varName+".", rcv+"."+fieldName+".")
 	}
 
-	// Replace func references: hashPassword( → s.HashPassword(
+	// Replace func references: hashPassword( → {rcv}.HashPassword(
 	for _, f := range funcs {
 		fieldName := ucFirst(f)
-		src = strings.ReplaceAll(src, f+"(", "s."+fieldName+"(")
+		src = strings.ReplaceAll(src, f+"(", rcv+"."+fieldName+"(")
 	}
 
-	// Replace component references: notification. → s.Notification.
+	// Replace component references: notification. → {rcv}.Notification.
 	for _, c := range components {
 		fieldName := ucFirst(c)
-		src = strings.ReplaceAll(src, c+".", "s."+fieldName+".")
+		src = strings.ReplaceAll(src, c+".", rcv+"."+fieldName+".")
 	}
 
 	// Replace authz and currentUser.
-	// ssac generates bare "authz.Check(currentUser, ...)" — authz is not a component.
-	src = strings.ReplaceAll(src, "authz.Check(currentUser,", "s.Authz.Check(s.currentUser(r),")
-	src = strings.ReplaceAll(src, "currentUser.UserID", "s.currentUser(r).UserID")
-	src = strings.ReplaceAll(src, "currentUser.ID", "s.currentUser(r).ID")
+	if isDomain {
+		src = strings.ReplaceAll(src, "authz.Check(currentUser,", rcv+".Authz.Check("+rcv+".CurrentUser(r),")
+		src = strings.ReplaceAll(src, "currentUser.UserID", rcv+".CurrentUser(r).UserID")
+		src = strings.ReplaceAll(src, "currentUser.ID", rcv+".CurrentUser(r).ID")
+	} else {
+		src = strings.ReplaceAll(src, "authz.Check(currentUser,", "s.Authz.Check(s.currentUser(r),")
+		src = strings.ReplaceAll(src, "currentUser.UserID", "s.currentUser(r).UserID")
+		src = strings.ReplaceAll(src, "currentUser.ID", "s.currentUser(r).ID")
+	}
 
 	// Qualify model package types used in service code.
 	if strings.Contains(src, "QueryOpts{}") {
-		src = strings.ReplaceAll(src, "QueryOpts{}", "model.QueryOpts{}")
-		// Add model import.
+		funcName := extractFuncName(src)
+		if cfg, ok := xConfigs[funcName]; ok {
+			src = strings.ReplaceAll(src, "QueryOpts{}", "model.ParseQueryOpts(r, "+cfg+")")
+		} else {
+			src = strings.ReplaceAll(src, "QueryOpts{}", "model.QueryOpts{}")
+		}
 		modelImport := fmt.Sprintf("\"%s/internal/model\"", modulePath)
 		if !strings.Contains(src, modelImport) {
 			src = strings.Replace(src, "import (", "import (\n\t"+modelImport, 1)
@@ -205,23 +235,15 @@ func transformSource(src string, models, funcs, components []string, modulePath 
 	}
 
 	// Add type assertions for @func results used as string arguments.
-	// ssac generates: result, err := s.funcName(args) where result is interface{}.
-	// When result is passed to a method expecting string, add .(string).
 	for _, f := range funcs {
-		// Pattern: s.funcName(...)  → result is interface{}
-		// Find variable assignments from func calls and add type assertion where needed.
-		callPattern := "s." + ucFirst(f) + "("
+		callPattern := rcv + "." + ucFirst(f) + "("
 		if idx := strings.Index(src, callPattern); idx > 0 {
-			// Find the variable name assigned from this call.
 			lineStart := strings.LastIndex(src[:idx], "\n") + 1
 			assignLine := src[lineStart:idx]
 			assignLine = strings.TrimSpace(assignLine)
-			// Pattern: "varName, err :="
 			if commaIdx := strings.Index(assignLine, ","); commaIdx > 0 {
 				varName := strings.TrimSpace(assignLine[:commaIdx])
 				if varName != "_" && varName != "" {
-					// Add .(string) assertion where this var is used as argument.
-					// Only replace when used as a function argument (preceded by comma or paren).
 					src = strings.ReplaceAll(src, ", "+varName+",", ", "+varName+".(string),")
 					src = strings.ReplaceAll(src, ", "+varName+")", ", "+varName+".(string))")
 					src = strings.ReplaceAll(src, "("+varName+",", "("+varName+".(string),")
@@ -233,10 +255,352 @@ func transformSource(src string, models, funcs, components []string, modulePath 
 	return src
 }
 
+// extractFuncName extracts the function name from Go source.
+func extractFuncName(src string) string {
+	for _, prefix := range []string{"func (s *Server) ", "func (h *Handler) "} {
+		if idx := strings.Index(src, prefix); idx >= 0 {
+			rest := src[idx+len(prefix):]
+			if parenIdx := strings.Index(rest, "("); parenIdx > 0 {
+				return rest[:parenIdx]
+			}
+		}
+	}
+	if idx := strings.Index(src, "\nfunc "); idx >= 0 {
+		rest := src[idx+len("\nfunc "):]
+		if parenIdx := strings.Index(rest, "("); parenIdx > 0 {
+			return rest[:parenIdx]
+		}
+	}
+	return ""
+}
+
+// extractXConfigs extracts x-pagination/x-sort/x-filter/x-include from OpenAPI operations.
+// Returns map[operationId] → Go literal string for model.QueryOptsConfig{...}.
+func extractXConfigs(doc *openapi3.T) map[string]string {
+	result := make(map[string]string)
+	if doc == nil || doc.Paths == nil {
+		return result
+	}
+
+	for _, pathItem := range doc.Paths.Map() {
+		for _, op := range pathItem.Operations() {
+			if op.OperationID == "" {
+				continue
+			}
+			cfg := buildQueryOptsConfig(op)
+			if cfg != "" {
+				result[op.OperationID] = cfg
+			}
+		}
+	}
+	return result
+}
+
+// buildQueryOptsConfig builds a model.QueryOptsConfig{...} Go literal from operation extensions.
+func buildQueryOptsConfig(op *openapi3.Operation) string {
+	var parts []string
+
+	if pag := getExtMap(op, "x-pagination"); pag != nil {
+		style := getStr(pag, "style", "offset")
+		defaultLimit := getInt(pag, "defaultLimit", 20)
+		maxLimit := getInt(pag, "maxLimit", 100)
+		parts = append(parts, fmt.Sprintf(
+			"Pagination: &model.PaginationConfig{Style: %q, DefaultLimit: %d, MaxLimit: %d}",
+			style, defaultLimit, maxLimit))
+	}
+
+	if sortCfg := getExtMap(op, "x-sort"); sortCfg != nil {
+		allowed := getStrSlice(sortCfg, "allowed")
+		def := getStr(sortCfg, "default", "")
+		dir := getStr(sortCfg, "direction", "asc")
+		parts = append(parts, fmt.Sprintf(
+			"Sort: &model.SortConfig{Allowed: []string{%s}, Default: %q, Direction: %q}",
+			quotedJoin(allowed), def, dir))
+	}
+
+	if filterCfg := getExtMap(op, "x-filter"); filterCfg != nil {
+		allowed := getStrSlice(filterCfg, "allowed")
+		parts = append(parts, fmt.Sprintf(
+			"Filter: &model.FilterConfig{Allowed: []string{%s}}",
+			quotedJoin(allowed)))
+	}
+
+	if incCfg := getExtMap(op, "x-include"); incCfg != nil {
+		allowed := getStrSlice(incCfg, "allowed")
+		// Derive runtime names: "instructor_id:users.id" → "instructor"
+		runtimeAllowed := make([]string, len(allowed))
+		for i, spec := range allowed {
+			colonIdx := strings.Index(spec, ":")
+			if colonIdx > 0 {
+				localCol := spec[:colonIdx]
+				runtimeAllowed[i] = strings.TrimSuffix(localCol, "_id")
+			} else {
+				runtimeAllowed[i] = spec
+			}
+		}
+		parts = append(parts, fmt.Sprintf(
+			"Include: &model.IncludeConfig{Allowed: []string{%s}}",
+			quotedJoin(runtimeAllowed)))
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return "model.QueryOptsConfig{" + strings.Join(parts, ", ") + "}"
+}
+
+// getExtMap extracts a map extension value from an OpenAPI operation.
+func getExtMap(op *openapi3.Operation, key string) map[string]interface{} {
+	if op.Extensions == nil {
+		return nil
+	}
+	v, ok := op.Extensions[key]
+	if !ok {
+		return nil
+	}
+	m, ok := v.(map[string]interface{})
+	if ok {
+		return m
+	}
+	return nil
+}
+
+// getStr extracts a string value from a map with a default.
+func getStr(m map[string]interface{}, key, def string) string {
+	v, ok := m[key]
+	if !ok {
+		return def
+	}
+	s, ok := v.(string)
+	if ok {
+		return s
+	}
+	return def
+}
+
+// getInt extracts an int value from a map with a default.
+func getInt(m map[string]interface{}, key string, def int) int {
+	v, ok := m[key]
+	if !ok {
+		return def
+	}
+	switch n := v.(type) {
+	case float64:
+		return int(n)
+	case int:
+		return n
+	case int64:
+		return int(n)
+	}
+	return def
+}
+
+// getStrSlice extracts a string slice from a map.
+func getStrSlice(m map[string]interface{}, key string) []string {
+	v, ok := m[key]
+	if !ok {
+		return nil
+	}
+	arr, ok := v.([]interface{})
+	if !ok {
+		return nil
+	}
+	var result []string
+	for _, item := range arr {
+		if s, ok := item.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result
+}
+
+// quotedJoin joins strings as quoted Go string literals.
+func quotedJoin(ss []string) string {
+	quoted := make([]string, len(ss))
+	for i, s := range ss {
+		quoted[i] = fmt.Sprintf("%q", s)
+	}
+	return strings.Join(quoted, ", ")
+}
+
+// hasDomains returns true if any service function has a non-empty Domain.
+func hasDomains(funcs []ssacparser.ServiceFunc) bool {
+	for _, f := range funcs {
+		if f.Domain != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// uniqueDomains returns sorted unique non-empty domain names.
+func uniqueDomains(funcs []ssacparser.ServiceFunc) []string {
+	seen := make(map[string]bool)
+	for _, f := range funcs {
+		if f.Domain != "" {
+			seen[f.Domain] = true
+		}
+	}
+	var result []string
+	for d := range seen {
+		result = append(result, d)
+	}
+	sort.Strings(result)
+	return result
+}
+
+// collectModelsForDomain extracts model names used by funcs in a specific domain.
+func collectModelsForDomain(funcs []ssacparser.ServiceFunc, domain string) []string {
+	seen := make(map[string]bool)
+	for _, fn := range funcs {
+		if fn.Domain != domain {
+			continue
+		}
+		for _, seq := range fn.Sequences {
+			if seq.Model != "" {
+				parts := strings.SplitN(seq.Model, ".", 2)
+				if len(parts) >= 1 {
+					seen[parts[0]] = true
+				}
+			}
+		}
+	}
+	var result []string
+	for name := range seen {
+		result = append(result, name)
+	}
+	sort.Strings(result)
+	return result
+}
+
+// collectFuncsForDomain extracts @func references for a specific domain.
+func collectFuncsForDomain(funcs []ssacparser.ServiceFunc, domain string) []string {
+	seen := make(map[string]bool)
+	for _, fn := range funcs {
+		if fn.Domain != domain {
+			continue
+		}
+		for _, seq := range fn.Sequences {
+			if seq.Func != "" {
+				seen[seq.Func] = true
+			}
+		}
+	}
+	var result []string
+	for name := range seen {
+		result = append(result, name)
+	}
+	sort.Strings(result)
+	return result
+}
+
+// collectComponentsForDomain extracts @component references for a specific domain.
+func collectComponentsForDomain(funcs []ssacparser.ServiceFunc, domain string) []string {
+	seen := make(map[string]bool)
+	for _, fn := range funcs {
+		if fn.Domain != domain {
+			continue
+		}
+		for _, seq := range fn.Sequences {
+			if seq.Component != "" {
+				seen[seq.Component] = true
+			}
+		}
+	}
+	var result []string
+	for name := range seen {
+		result = append(result, name)
+	}
+	sort.Strings(result)
+	return result
+}
+
+// domainNeedsAuth returns true if any func in the domain uses authz or currentUser.
+func domainNeedsAuth(funcs []ssacparser.ServiceFunc, domain string) bool {
+	for _, fn := range funcs {
+		if fn.Domain != domain {
+			continue
+		}
+		for _, seq := range fn.Sequences {
+			if seq.Type == "authorize" {
+				return true
+			}
+			// Check if any param references currentUser.
+			for _, p := range seq.Params {
+				if p.Source == "currentUser" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // lcFirst lowercases the first character.
 func lcFirst(s string) string {
 	if len(s) == 0 {
 		return s
 	}
 	return strings.ToLower(s[:1]) + s[1:]
+}
+
+// collectModelIncludes extracts per-model x-include specs from OpenAPI operations.
+// Maps operationId → model via serviceFuncs, then merges all include specs per model.
+// Returns map[ModelName][]string where values are raw include specs (e.g. "user", "instructor_id:user").
+func collectModelIncludes(doc *openapi3.T, funcs []ssacparser.ServiceFunc) map[string][]string {
+	// Map operationId → model name (from the first get sequence with @model).
+	opToModel := make(map[string]string)
+	for _, fn := range funcs {
+		for _, seq := range fn.Sequences {
+			if seq.Model != "" && seq.Type == "get" {
+				parts := strings.SplitN(seq.Model, ".", 2)
+				if len(parts) >= 1 {
+					opToModel[fn.Name] = parts[0]
+					break
+				}
+			}
+		}
+	}
+
+	result := make(map[string][]string)
+	if doc == nil || doc.Paths == nil {
+		return result
+	}
+
+	for _, pathItem := range doc.Paths.Map() {
+		for _, op := range pathItem.Operations() {
+			if op.OperationID == "" {
+				continue
+			}
+			incCfg := getExtMap(op, "x-include")
+			if incCfg == nil {
+				continue
+			}
+			allowed := getStrSlice(incCfg, "allowed")
+			if len(allowed) == 0 {
+				continue
+			}
+			modelName, ok := opToModel[op.OperationID]
+			if !ok {
+				continue
+			}
+			existing := result[modelName]
+			for _, spec := range allowed {
+				found := false
+				for _, e := range existing {
+					if e == spec {
+						found = true
+						break
+					}
+				}
+				if !found {
+					existing = append(existing, spec)
+				}
+			}
+			result[modelName] = existing
+		}
+	}
+
+	return result
 }

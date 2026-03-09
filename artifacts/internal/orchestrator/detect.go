@@ -60,6 +60,12 @@ func DetectSSOTs(root string) ([]DetectedSSOT, error) {
 				dir = matches[0] // file path, not dir
 			}
 			found = append(found, DetectedSSOT{Kind: c.kind, Path: dir})
+		} else if c.kind == KindSSaC {
+			// Also check for domain folder structure: service/{domain}/*.go
+			subMatches, _ := filepath.Glob(filepath.Join(abs, "service", "*", "*.go"))
+			if len(subMatches) > 0 {
+				found = append(found, DetectedSSOT{Kind: c.kind, Path: filepath.Join(abs, "service")})
+			}
 		}
 	}
 
