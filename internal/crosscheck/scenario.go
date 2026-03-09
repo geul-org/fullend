@@ -6,8 +6,8 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 
-	"github.com/geul-org/fullend/artifacts/internal/scenario"
-	"github.com/geul-org/fullend/artifacts/internal/statemachine"
+	"github.com/geul-org/fullend/internal/scenario"
+	"github.com/geul-org/fullend/internal/statemachine"
 )
 
 // CheckScenarios validates Scenario ↔ OpenAPI and Scenario ↔ States.

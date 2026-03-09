@@ -3,10 +3,10 @@ package crosscheck
 import (
 	"github.com/getkin/kin-openapi/openapi3"
 
-	"github.com/geul-org/fullend/artifacts/internal/funcspec"
-	"github.com/geul-org/fullend/artifacts/internal/policy"
-	"github.com/geul-org/fullend/artifacts/internal/scenario"
-	"github.com/geul-org/fullend/artifacts/internal/statemachine"
+	"github.com/geul-org/fullend/internal/funcspec"
+	"github.com/geul-org/fullend/internal/policy"
+	"github.com/geul-org/fullend/internal/scenario"
+	"github.com/geul-org/fullend/internal/statemachine"
 	ssacparser "github.com/geul-org/ssac/parser"
 	ssacvalidator "github.com/geul-org/ssac/validator"
 )

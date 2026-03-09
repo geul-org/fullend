@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/geul-org/fullend/artifacts/internal/policy"
+	"github.com/geul-org/fullend/internal/policy"
 )
 
 // GenerateAuthzPackage generates the OPA-based Authorizer implementation.

@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/geul-org/fullend/artifacts/internal/statemachine"
+	"github.com/geul-org/fullend/internal/statemachine"
 )
 
 // GenerateStateMachines generates Go state machine packages from stateDiagrams.

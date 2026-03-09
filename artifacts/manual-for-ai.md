@@ -810,7 +810,7 @@ fullend gen      [--skip kind,...] <specs-dir> <artifacts-dir> # validate -> cod
 fullend status   <specs-dir>                                   # SSOT summary
 ```
 
-9 required SSOTs (OpenAPI, DDL, SSaC, Model, STML, States, Policy, Scenario, Terraform) cause an ERROR if missing. Func is optional (detected only when `func/` exists). Use `--skip` to explicitly exclude:
+10 required SSOTs (fullend.yaml, OpenAPI, DDL, SSaC, Model, STML, States, Policy, Scenario, Terraform) cause an ERROR if missing. Func is optional (detected only when `func/` exists). Use `--skip` to explicitly exclude:
 
 ```bash
 fullend validate --skip states,terraform,scenario specs/my-project

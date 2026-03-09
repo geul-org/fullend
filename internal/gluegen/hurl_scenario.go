@@ -8,7 +8,7 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 
-	"github.com/geul-org/fullend/artifacts/internal/scenario"
+	"github.com/geul-org/fullend/internal/scenario"
 )
 
 // GenerateScenarioHurl generates scenario-*.hurl and invariant-*.hurl from .feature files.

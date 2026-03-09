@@ -1,32 +1,33 @@
 # fullend
 
-Full-stack SSOT orchestrator — validates consistency across 9 SSOT sources (STML, OpenAPI, SSaC, SQL DDL, Mermaid stateDiagram, OPA Rego, Gherkin Scenario, Func Spec, Terraform) and generates code from them in a single CLI.
+Full-stack SSOT orchestrator — validates consistency across 10 SSOT sources (fullend.yaml, STML, OpenAPI, SSaC, SQL DDL, Mermaid stateDiagram, OPA Rego, Gherkin Scenario, Func Spec, Terraform) and generates code from them in a single CLI.
 
 ```
 specs/
-├── api/openapi.yaml       → OpenAPI 3.x
-├── db/*.sql               → SQL DDL + sqlc queries
-├── service/*.go           → SSaC (comment DSL)
-├── model/*.go             → Go interfaces
-├── func/<pkg>/*.go        → Custom func implementations (optional)
-├── states/*.md            → Mermaid stateDiagram (state transitions)
-├── policy/*.rego          → OPA Rego (authorization policies)
-├── scenario/*.feature     → Gherkin (business scenarios)
-├── frontend/*.html        → STML (HTML5 + data-*)
-└── terraform/*.tf         → HCL
+├── fullend.yaml             → Project config (required)
+├── api/openapi.yaml         → OpenAPI 3.x
+├── db/*.sql                 → SQL DDL + sqlc queries
+├── service/*.go             → SSaC (comment DSL)
+├── model/*.go               → Go interfaces
+├── func/<pkg>/*.go          → Custom func implementations (optional)
+├── states/*.md              → Mermaid stateDiagram (state transitions)
+├── policy/*.rego            → OPA Rego (authorization policies)
+├── scenario/*.feature       → Gherkin (business scenarios)
+├── frontend/*.html          → STML (HTML5 + data-*)
+└── terraform/*.tf           → HCL
 ```
 
 ## Install
 
 ```bash
-go install github.com/geul-org/fullend/artifacts/cmd/fullend@latest
+go install github.com/geul-org/fullend/cmd/fullend@latest
 ```
 
 ## Commands
 
 ### validate
 
-Validates each SSOT individually, then cross-validates consistency between layers. 9 SSOTs are required by default; Func is optional (only when `func/` exists). Use `--skip` to exclude specific kinds.
+Validates each SSOT individually, then cross-validates consistency between layers. 10 SSOTs are required by default; Func is optional (only when `func/` exists). Use `--skip` to exclude specific kinds.
 
 ```bash
 fullend validate <specs-dir>

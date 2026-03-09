@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/geul-org/fullend/artifacts/internal/orchestrator"
-	"github.com/geul-org/fullend/artifacts/internal/reporter"
+	"github.com/geul-org/fullend/internal/orchestrator"
+	"github.com/geul-org/fullend/internal/reporter"
 )
 
 const usage = `Usage: fullend <command> [arguments]

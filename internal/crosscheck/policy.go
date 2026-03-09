@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/geul-org/fullend/artifacts/internal/policy"
-	"github.com/geul-org/fullend/artifacts/internal/statemachine"
+	"github.com/geul-org/fullend/internal/policy"
+	"github.com/geul-org/fullend/internal/statemachine"
 	ssacparser "github.com/geul-org/ssac/parser"
 	ssacvalidator "github.com/geul-org/ssac/validator"
 )
