@@ -23,3 +23,9 @@ Third-party dependencies:
     Licensed under the MIT License
     Copyright (c) 2026 Park Junwoo
     https://github.com/geul-org/stml
+
+  github.com/open-policy-agent/opa
+    Licensed under the Apache License, Version 2.0
+    Copyright The Open Policy Agent Authors
+    https://github.com/open-policy-agent/opa
+    Used by generated OPA Authorizer code (authz package)
