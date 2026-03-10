@@ -49,6 +49,7 @@ func generateMiddleware(intDir, modulePath string, claims map[string]string) err
 	src := fmt.Sprintf(`package middleware
 
 import (
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -57,21 +58,19 @@ import (
 	"%s/internal/model"
 )
 
-// BearerAuth returns a gin middleware that extracts the current user from the Authorization header.
-// It does NOT abort — authorize sequences in handlers check permissions.
+// BearerAuth returns a gin middleware that validates the Authorization header.
+// Requests without a valid Bearer token are rejected with 401.
 func BearerAuth(secret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		header := c.GetHeader("Authorization")
 		if !strings.HasPrefix(header, "Bearer ") {
-			c.Set("currentUser", &model.CurrentUser{})
-			c.Next()
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
 		}
 		token := strings.TrimPrefix(header, "Bearer ")
 		out, err := auth.VerifyToken(auth.VerifyTokenRequest{Token: token, Secret: secret})
 		if err != nil {
-			c.Set("currentUser", &model.CurrentUser{})
-			c.Next()
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
 			return
 		}
 		c.Set("currentUser", &model.CurrentUser{

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -74,6 +75,9 @@ func renderFeatureHurl(f *scenario.Feature, doc *openapi3.T, opMap map[string]op
 	var buf strings.Builder
 	buf.WriteString(fmt.Sprintf("# Auto-generated from %s — do not edit.\n\n", filepath.Base(f.File)))
 
+	// Derive email prefix from feature filename to avoid collisions across hurl files.
+	emailPrefix := deriveEmailPrefix(f.File)
+
 	for i, sc := range f.Scenarios {
 		if i > 0 {
 			buf.WriteString("\n")
@@ -109,7 +113,7 @@ func renderFeatureHurl(f *scenario.Feature, doc *openapi3.T, opMap map[string]op
 					}
 					j++
 				}
-				writeActionHurlV2(&buf, step, statusCode, trailingAssertions, opMap, doc, captures, &hasToken)
+				writeActionHurlV2(&buf, step, statusCode, trailingAssertions, opMap, doc, captures, &hasToken, emailPrefix)
 				idx = j
 			} else {
 				// Standalone assertion (shouldn't happen normally, but handle gracefully).
@@ -121,7 +125,24 @@ func renderFeatureHurl(f *scenario.Feature, doc *openapi3.T, opMap map[string]op
 	return buf.String(), nil
 }
 
-func writeActionHurlV2(buf *strings.Builder, step scenario.Step, statusCode string, assertions []scenario.Step, opMap map[string]operationInfo, doc *openapi3.T, captures map[string]bool, hasToken *bool) {
+// deriveEmailPrefix extracts a short prefix from the feature filename.
+// e.g. "course-lifecycle.feature" → "lifecycle", "student-enrollment.feature" → "enrollment"
+func deriveEmailPrefix(file string) string {
+	base := filepath.Base(file)
+	base = strings.TrimSuffix(base, filepath.Ext(base))
+	// Use last segment after hyphen, or full name if no hyphen.
+	parts := strings.Split(base, "-")
+	return parts[len(parts)-1]
+}
+
+var emailRe = regexp.MustCompile(`"([^"]+)@test\.com"`)
+
+// uniquifyEmails replaces "xxx@test.com" with "prefix-xxx@test.com" in JSON.
+func uniquifyEmails(json, prefix string) string {
+	return emailRe.ReplaceAllString(json, fmt.Sprintf(`"%s-$1@test.com"`, prefix))
+}
+
+func writeActionHurlV2(buf *strings.Builder, step scenario.Step, statusCode string, assertions []scenario.Step, opMap map[string]operationInfo, doc *openapi3.T, captures map[string]bool, hasToken *bool, emailPrefix string) {
 	info, ok := opMap[step.OperationID]
 	if !ok {
 		buf.WriteString(fmt.Sprintf("# SKIP: %s %s (operationId not found)\n\n", step.Method, step.OperationID))
@@ -130,8 +151,11 @@ func writeActionHurlV2(buf *strings.Builder, step scenario.Step, statusCode stri
 
 	buf.WriteString(fmt.Sprintf("# %s\n", step.OperationID))
 
+	// Uniquify emails in JSON to avoid collisions across hurl files.
+	json := uniquifyEmails(step.JSON, emailPrefix)
+
 	// Build URL: substitute path params from JSON or captures.
-	url := buildScenarioURL(info.Path, step.JSON, captures)
+	url := buildScenarioURL(info.Path, json, captures)
 	buf.WriteString(fmt.Sprintf("%s {{host}}%s\n", info.Method, url))
 
 	// Auth header if token captured and endpoint needs auth.
@@ -140,7 +164,7 @@ func writeActionHurlV2(buf *strings.Builder, step scenario.Step, statusCode stri
 	}
 
 	// Request body: render JSON with variable substitution.
-	body := buildScenarioBody(step.JSON, info.Path)
+	body := buildScenarioBody(json, info.Path)
 	if body != "" {
 		buf.WriteString("Content-Type: application/json\n")
 		buf.WriteString(body + "\n")
