@@ -692,16 +692,9 @@ func finishQuery(q *sqlcQuery, sql string, paramRe, insertColRe, updateSetRe *re
 		}
 	}
 
-	// Extract column names for UPDATE SET.
-	if updMatch := updateSetRe.FindStringSubmatch(sql); updMatch != nil {
-		parts := strings.Split(updMatch[1], ",")
-		for _, p := range parts {
-			eqIdx := strings.Index(p, "=")
-			if eqIdx > 0 {
-				q.Columns = append(q.Columns, strings.TrimSpace(p[:eqIdx]))
-			}
-		}
-	}
+	// NOTE: UPDATE SET columns are NOT extracted for reordering.
+	// UPDATE queries use explicit $N placeholders that match the interface param order.
+	// Reordering is only needed for INSERT (column order in VALUES matches $N order).
 }
 
 // singularize converts a plural table name to a singular model name.

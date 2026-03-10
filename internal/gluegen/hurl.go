@@ -8,6 +8,9 @@ import (
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
+
+	"github.com/geul-org/fullend/internal/statemachine"
+	ssacparser "github.com/geul-org/ssac/parser"
 )
 
 // scenarioStep represents a single HTTP request in the Hurl scenario.
@@ -21,7 +24,7 @@ type scenarioStep struct {
 }
 
 // generateHurlTests generates smoke.hurl from OpenAPI spec.
-func generateHurlTests(doc *openapi3.T, outDir, specsDir string) error {
+func generateHurlTests(doc *openapi3.T, outDir, specsDir string, diagrams []*statemachine.StateDiagram, serviceFuncs []ssacparser.ServiceFunc) error {
 	if doc == nil || doc.Paths == nil {
 		return nil
 	}
@@ -31,7 +34,7 @@ func generateHurlTests(doc *openapi3.T, outDir, specsDir string) error {
 		return fmt.Errorf("create tests dir: %w", err)
 	}
 
-	steps := buildScenarioOrder(doc, specsDir)
+	steps := buildScenarioOrder(doc, specsDir, diagrams, serviceFuncs)
 	if len(steps) == 0 {
 		return nil
 	}
@@ -70,11 +73,15 @@ func generateHurlTests(doc *openapi3.T, outDir, specsDir string) error {
 
 // buildScenarioOrder sorts endpoints into a dependency-aware execution order.
 // Strategy:
-//   1. Auth (Register, Login)
-//   2. For each resource group: POST (create) → GET → PUT (non-delete)
-//   3. Child resource CRUD (recursively)
-//   4. DELETE in reverse depth order (children first, then parents)
-func buildScenarioOrder(doc *openapi3.T, specsDir string) []scenarioStep {
+//  1. Auth (Register, Login)
+//  2. Interleaved creates + state transitions:
+//     - Top-level creates first (depth ≤ 2)
+//     - State transitions in stateDiagram BFS order
+//     - Nested creates (depth > 2) after parent resource's first transition
+//  3. Updates (PUT without @state)
+//  4. Read (GET) last
+//  5. DELETE in FK dependency order
+func buildScenarioOrder(doc *openapi3.T, specsDir string, diagrams []*statemachine.StateDiagram, serviceFuncs []ssacparser.ServiceFunc) []scenarioStep {
 	var all []scenarioStep
 
 	for path, pi := range doc.Paths.Map() {
@@ -95,27 +102,54 @@ func buildScenarioOrder(doc *openapi3.T, specsDir string) []scenarioStep {
 		}
 	}
 
-	// Separate into categories.
-	var authSteps, createSteps, readSteps, updateSteps, transitionSteps, deleteSteps []scenarioStep
+	// Build set of operationIDs that have @state in SSaC.
+	stateOps := buildStateOpsSet(serviceFuncs)
+
+	// Build transition order from stateDiagrams: event → order index.
+	transitionOrder := buildTransitionOrder(diagrams)
+
+	// Build resource → first transition order (for nested create placement).
+	resourceFirstTransition := buildResourceFirstTransition(diagrams, transitionOrder)
+
+	// Assign a sort key to each non-auth, non-read, non-delete step.
+	type orderedStep struct {
+		step  scenarioStep
+		order float64
+	}
+
+	var authSteps []scenarioStep
+	var midSteps []orderedStep
+	var readSteps, deleteSteps []scenarioStep
+
 	for _, s := range all {
 		if s.IsAuth {
 			authSteps = append(authSteps, s)
 			continue
 		}
 		switch s.Method {
-		case "POST":
-			createSteps = append(createSteps, s)
 		case "GET":
 			readSteps = append(readSteps, s)
-		case "PUT":
-			// State transitions (PUT without request body) go before reads.
-			if s.Operation.RequestBody == nil {
-				transitionSteps = append(transitionSteps, s)
-			} else {
-				updateSteps = append(updateSteps, s)
-			}
 		case "DELETE":
 			deleteSteps = append(deleteSteps, s)
+		default:
+			if stateOps[s.OperationID] {
+				// State transition: use diagram BFS order.
+				midSteps = append(midSteps, orderedStep{s, float64(transitionOrder[s.OperationID])})
+			} else if s.Method == "POST" {
+				parentResource := findParentResource(s.Path)
+				if parentResource == "" {
+					// Top-level create: before all transitions.
+					midSteps = append(midSteps, orderedStep{s, -1.0})
+				} else if firstOrd, ok := resourceFirstTransition[parentResource]; ok {
+					// Nested create: after parent's first transition.
+					midSteps = append(midSteps, orderedStep{s, float64(firstOrd) + 0.5})
+				} else {
+					midSteps = append(midSteps, orderedStep{s, -0.5})
+				}
+			} else {
+				// PUT/PATCH without @state: after transitions.
+				midSteps = append(midSteps, orderedStep{s, 900.0})
+			}
 		}
 	}
 
@@ -124,28 +158,109 @@ func buildScenarioOrder(doc *openapi3.T, specsDir string) []scenarioStep {
 		return authOrder(authSteps[i].OperationID) < authOrder(authSteps[j].OperationID)
 	})
 
-	// Sort creates by depth (parent first), then path.
-	sortByDepthPath(createSteps)
+	// Sort mid steps by order, then depth, then path for stability.
+	sort.SliceStable(midSteps, func(i, j int) bool {
+		if midSteps[i].order != midSteps[j].order {
+			return midSteps[i].order < midSteps[j].order
+		}
+		if midSteps[i].step.PathDepth != midSteps[j].step.PathDepth {
+			return midSteps[i].step.PathDepth < midSteps[j].step.PathDepth
+		}
+		return midSteps[i].step.Path < midSteps[j].step.Path
+	})
+
 	// Sort reads by depth, then path.
 	sortByDepthPath(readSteps)
-	// Sort transitions by depth, then path.
-	sortByDepthPath(transitionSteps)
-	// Sort updates by depth, then path.
-	sortByDepthPath(updateSteps)
-	// Sort deletes by FK dependency (children first, then parents).
-	// Skip deletes where child FK tables have no DELETE endpoint.
+	// Sort deletes by FK dependency.
 	deleteSteps = sortDeletesByFK(deleteSteps, specsDir)
 
-	// Final order: auth → create → transition → read → update → delete
+	// Final order: auth → mid (creates + transitions interleaved) → read → delete
 	var result []scenarioStep
 	result = append(result, authSteps...)
-	result = append(result, createSteps...)
-	result = append(result, transitionSteps...)
+	for _, ms := range midSteps {
+		result = append(result, ms.step)
+	}
 	result = append(result, readSteps...)
-	result = append(result, updateSteps...)
 	result = append(result, deleteSteps...)
 
 	return result
+}
+
+// findParentResource extracts the parent resource from a nested path.
+// e.g. /gigs/{GigID}/proposals → "gigs", /gigs → "".
+func findParentResource(path string) string {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	for i := 1; i < len(parts); i++ {
+		if strings.HasPrefix(parts[i], "{") && i > 0 {
+			// Found a path param; the segment before it is a resource.
+			// If there's more path after this param, parts[i-1] is the parent.
+			if i+1 < len(parts) {
+				return parts[i-1]
+			}
+		}
+	}
+	return ""
+}
+
+// buildResourceFirstTransition maps plural resource name → first transition order index.
+func buildResourceFirstTransition(diagrams []*statemachine.StateDiagram, transitionOrder map[string]int) map[string]int {
+	result := make(map[string]int)
+	for _, d := range diagrams {
+		// Pluralize diagram ID: "gig" → "gigs".
+		resource := d.ID + "s"
+		for _, t := range d.Transitions {
+			if t.From == d.InitialState {
+				if ord, ok := transitionOrder[t.Event]; ok {
+					if existing, exists := result[resource]; !exists || ord < existing {
+						result[resource] = ord
+					}
+				}
+			}
+		}
+	}
+	return result
+}
+
+// buildStateOpsSet returns operationIDs that have @state annotations in SSaC.
+func buildStateOpsSet(serviceFuncs []ssacparser.ServiceFunc) map[string]bool {
+	ops := make(map[string]bool)
+	for _, sf := range serviceFuncs {
+		for _, seq := range sf.Sequences {
+			if seq.Type == ssacparser.SeqState {
+				ops[sf.Name] = true
+				break
+			}
+		}
+	}
+	return ops
+}
+
+// buildTransitionOrder walks stateDiagrams BFS from initial state,
+// returning event → order index for sorting.
+func buildTransitionOrder(diagrams []*statemachine.StateDiagram) map[string]int {
+	order := make(map[string]int)
+	idx := 0
+	for _, d := range diagrams {
+		// BFS from initial state following transitions.
+		visited := make(map[string]bool)
+		queue := []string{d.InitialState}
+		visited[d.InitialState] = true
+		for len(queue) > 0 {
+			state := queue[0]
+			queue = queue[1:]
+			for _, t := range d.Transitions {
+				if t.From == state && !visited[t.To] {
+					if _, exists := order[t.Event]; !exists {
+						order[t.Event] = idx
+						idx++
+					}
+					visited[t.To] = true
+					queue = append(queue, t.To)
+				}
+			}
+		}
+	}
+	return order
 }
 
 func sortByDepthPath(steps []scenarioStep) {

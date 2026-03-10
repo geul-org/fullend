@@ -405,6 +405,14 @@ func genGlue(specsDir, artifactsDir string, has map[SSOTKind]DetectedSSOT, stmlD
 		input.SymbolTable = st
 	}
 
+	// Load state diagrams for smoke test ordering.
+	if d, ok := has[KindStates]; ok {
+		diagrams, err := statemachine.ParseDir(d.Path)
+		if err == nil {
+			input.StateDiagrams = diagrams
+		}
+	}
+
 	if err := gluegen.Generate(input); err != nil {
 		step.Status = reporter.Fail
 		step.Errors = append(step.Errors, fmt.Sprintf("glue-gen error: %v", err))
