@@ -99,18 +99,30 @@ func CheckFuncs(
 				})
 			}
 
-			// Rule 2: Input key names must match Request field names.
+			// Rule 2: Input key names + types must match Request field names + types.
 			if inputCount > 0 {
-				reqFieldSet := make(map[string]bool)
+				reqFieldMap := make(map[string]string) // name → type
 				for _, rf := range spec.RequestFields {
-					reqFieldSet[rf.Name] = true
+					reqFieldMap[rf.Name] = rf.Type
 				}
-				for inputKey := range seq.Inputs {
-					if !reqFieldSet[inputKey] {
+				for inputKey, inputValue := range seq.Inputs {
+					reqType, exists := reqFieldMap[inputKey]
+					if !exists {
 						errs = append(errs, CrossError{
 							Rule:    "Func ↔ SSaC",
 							Context: ctx,
 							Message: fmt.Sprintf("@call Input 필드 %q가 %sRequest에 없음", inputKey, strings.ToUpper(funcName[:1])+funcName[1:]),
+							Level:   "ERROR",
+						})
+						continue
+					}
+					// Type validation.
+					valueType := resolveInputValueType(inputValue, definedVars, symbolTable, openAPIDoc, sf.Name)
+					if valueType != "" && !typesCompatible(valueType, reqType) {
+						errs = append(errs, CrossError{
+							Rule:    "Func ↔ SSaC",
+							Context: ctx,
+							Message: fmt.Sprintf("@call Input %s 타입 불일치: %s(source) ≠ %s(Request)", inputKey, valueType, reqType),
 							Level:   "ERROR",
 						})
 					}
@@ -160,6 +172,42 @@ func CheckFuncs(
 	return errs
 }
 
+// resolveInputValueType resolves the Go type of an Input value string.
+// Patterns: "request.Field" → OpenAPI, "var.Field" → DDL, "\"literal\"" → string, "currentUser.*" / "config.*" → skip.
+func resolveInputValueType(value string, definedVars map[string]string, st *ssacvalidator.SymbolTable, doc *openapi3.T, funcName string) string {
+	// Literal string.
+	if strings.HasPrefix(value, "\"") {
+		return "string"
+	}
+
+	parts := strings.SplitN(value, ".", 2)
+	if len(parts) < 2 {
+		return ""
+	}
+	source, field := parts[0], parts[1]
+
+	// Skip config (type unknown).
+	if source == "config" {
+		return ""
+	}
+
+	// request.Field → OpenAPI.
+	if source == "request" {
+		return resolveOpenAPIFieldType(doc, funcName, field)
+	}
+
+	// currentUser → skip (claims type not tracked here).
+	if source == "currentUser" {
+		return ""
+	}
+
+	// variable.Field → DDL via definedVars.
+	typeName, ok := definedVars[source]
+	if !ok {
+		return ""
+	}
+	return resolveDDLColumnType(st, typeName, field)
+}
 
 // resolveDDLColumnType looks up a column's Go type from the SymbolTable.
 // DDLTables: map[string]DDLTable, DDLTable.Columns: map[string]string (column name → Go type).
@@ -253,21 +301,10 @@ func openAPITypeToGo(schema *openapi3.Schema) string {
 }
 
 // typesCompatible checks if two Go type strings are compatible.
+// Go does NOT allow implicit conversion between int/int32/int64,
+// so only exact matches are considered compatible.
 func typesCompatible(a, b string) bool {
-	if a == b {
-		return true
-	}
-	// int/int64 compatibility.
-	intTypes := map[string]bool{"int": true, "int32": true, "int64": true}
-	if intTypes[a] && intTypes[b] {
-		return true
-	}
-	// float32/float64 compatibility.
-	floatTypes := map[string]bool{"float32": true, "float64": true}
-	if floatTypes[a] && floatTypes[b] {
-		return true
-	}
-	return false
+	return a == b
 }
 
 // generateSkeleton creates a skeleton code hint for a missing func.

@@ -96,16 +96,18 @@ func checkParamTypes(seq ssacparser.Sequence, st *ssacvalidator.SymbolTable, ctx
 		return errs // Table not found; already caught by other rules
 	}
 
-	for _, arg := range seq.Args {
-		if arg.Source != "request" {
-			continue // Only check request args that map to columns
+	for key, value := range seq.Inputs {
+		// Only check request-sourced inputs that map to columns.
+		parts := strings.SplitN(value, ".", 2)
+		if parts[0] != "request" {
+			continue
 		}
 
-		colName := pascalToSnake(arg.Field)
+		colName := pascalToSnake(key)
 
 		// Handle {Model}ID → id pattern.
-		// e.g. @model Room.FindByID with request.RoomID → check "id" column.
-		if strings.EqualFold(arg.Field, modelName+"ID") {
+		// e.g. @model Room.FindByID with {RoomID: request.RoomID} → check "id" column.
+		if strings.EqualFold(key, modelName+"ID") {
 			colName = "id"
 		}
 
@@ -113,7 +115,7 @@ func checkParamTypes(seq ssacparser.Sequence, st *ssacvalidator.SymbolTable, ctx
 			errs = append(errs, CrossError{
 				Rule:       "SSaC arg ↔ DDL",
 				Context:    ctx,
-				Message:    fmt.Sprintf("seq[%d] arg %s (→ %s) not found in table %s", seqIdx, arg.Field, colName, tableName),
+				Message:    fmt.Sprintf("seq[%d] input %s (→ %s) not found in table %s", seqIdx, key, colName, tableName),
 				Level:      "WARNING",
 				Suggestion: fmt.Sprintf("DDL에 추가: ALTER TABLE %s ADD COLUMN %s -- TODO: 타입 지정;", tableName, colName),
 			})

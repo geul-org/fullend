@@ -244,7 +244,19 @@ func validateOpenAPI(path string) (reporter.StepResult, *openapi3.T) {
 			count++
 		}
 	}
-	step.Status = reporter.Pass
+
+	// Check path param name conflicts.
+	if conflicts := checkPathParamConflicts(doc); len(conflicts) > 0 {
+		for _, c := range conflicts {
+			step.Errors = append(step.Errors, c)
+		}
+	}
+
+	if len(step.Errors) > 0 {
+		step.Status = reporter.Fail
+	} else {
+		step.Status = reporter.Pass
+	}
 	step.Summary = fmt.Sprintf("%d endpoints", count)
 	return step, doc
 }
@@ -600,4 +612,54 @@ func validateConfig(path string) (reporter.StepResult, *projectconfig.ProjectCon
 	}
 	step.Summary = strings.Join(parts, ", ")
 	return step, cfg
+}
+
+// checkPathParamConflicts detects path param name conflicts at the same segment position.
+// e.g. /gigs/{ID} and /gigs/{GigID}/proposals conflict because segment[1] has both {ID} and {GigID}.
+func checkPathParamConflicts(doc *openapi3.T) []string {
+	if doc == nil || doc.Paths == nil {
+		return nil
+	}
+
+	// Group: "prefix" → map[paramName][]fullPath
+	// prefix is the path up to but not including the param segment, plus position index.
+	// e.g. "/gigs/{ID}" → prefix="/gigs/", position=1
+	type segKey struct {
+		prefix   string
+		position int
+	}
+	paramAt := make(map[segKey]map[string][]string) // segKey → paramName → []paths
+
+	for path := range doc.Paths.Map() {
+		segments := strings.Split(strings.Trim(path, "/"), "/")
+		for i, seg := range segments {
+			if strings.HasPrefix(seg, "{") && strings.HasSuffix(seg, "}") {
+				paramName := seg[1 : len(seg)-1]
+				key := segKey{
+					prefix:   strings.Join(segments[:i], "/"),
+					position: i,
+				}
+				if paramAt[key] == nil {
+					paramAt[key] = make(map[string][]string)
+				}
+				paramAt[key][paramName] = append(paramAt[key][paramName], path)
+			}
+		}
+	}
+
+	var errs []string
+	for key, names := range paramAt {
+		if len(names) <= 1 {
+			continue
+		}
+		var nameList []string
+		for n := range names {
+			nameList = append(nameList, "{"+n+"}")
+		}
+		errs = append(errs, fmt.Sprintf(
+			"path param 충돌: segment[%d] (prefix=/%s/)에 %s가 혼재 — 이름을 통일하세요",
+			key.position, key.prefix, strings.Join(nameList, ", "),
+		))
+	}
+	return errs
 }

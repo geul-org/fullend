@@ -67,14 +67,7 @@ func collectCurrentUserFields(funcs []ssacparser.ServiceFunc) map[string][]strin
 	for _, sf := range funcs {
 		loc := sf.FileName + ":" + sf.Name
 		for _, seq := range sf.Sequences {
-			// 1. Args: a.Source == "currentUser"
-			for _, arg := range seq.Args {
-				if arg.Source == "currentUser" && arg.Field != "" {
-					result[arg.Field] = append(result[arg.Field], loc)
-				}
-			}
-
-			// 2. Inputs: values starting with "currentUser."
+			// Inputs: values starting with "currentUser."
 			for _, val := range seq.Inputs {
 				if strings.HasPrefix(val, "currentUser.") {
 					field := strings.TrimPrefix(val, "currentUser.")

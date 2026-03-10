@@ -1,6 +1,6 @@
 package service
 
-// @get []Gig gigs = Gig.List(query)
+// @get []Gig gigs = Gig.List({query})
 // @response {
 //   gigs: gigs
 // }

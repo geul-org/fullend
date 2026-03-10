@@ -260,14 +260,14 @@ paths:
                   gig:
                     $ref: "#/components/schemas/Gig"
 
-  /gigs/{GigID}/proposals:
+  /gigs/{ID}/proposals:
     post:
       operationId: SubmitProposal
       summary: Submit a proposal for a gig
       security:
         - bearerAuth: []
       parameters:
-        - name: GigID
+        - name: ID
           in: path
           required: true
           schema:

@@ -5,7 +5,7 @@ package billing
 
 type ReleaseFundsRequest struct {
 	GigID        int64
-	Amount       int
+	Amount       int64
 	FreelancerID int64
 }
 

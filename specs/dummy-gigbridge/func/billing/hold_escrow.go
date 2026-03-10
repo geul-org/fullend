@@ -5,7 +5,7 @@ package billing
 
 type HoldEscrowRequest struct {
 	GigID    int64
-	Amount   int
+	Amount   int64
 	ClientID int64
 }
 

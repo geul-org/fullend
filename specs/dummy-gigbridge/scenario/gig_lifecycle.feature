@@ -11,7 +11,7 @@ Feature: Gig lifecycle happy path
 
     Given POST Register {"Email": "freelancer-lifecycle@test.com", "Password": "Pass1234!", "Role": "freelancer", "Name": "Freelancer A"} → freelancerUser
     And POST Login {"Email": "freelancer-lifecycle@test.com", "Password": "Pass1234!"} → token
-    And POST SubmitProposal {"GigID": gig.ID, "BidAmount": 90000} → proposal
+    And POST SubmitProposal {"ID": gig.ID, "BidAmount": 90000} → proposal
     Then status == 201
 
     Given POST Login {"Email": "client-lifecycle@test.com", "Password": "Pass1234!"} → token
@@ -41,7 +41,7 @@ Feature: Unauthorized freelancer cannot submit work on another freelancers gig
 
     Given POST Register {"Email": "freelancerA-inv1@test.com", "Password": "Pass1234!", "Role": "freelancer", "Name": "Freelancer A"} → freelancerA
     And POST Login {"Email": "freelancerA-inv1@test.com", "Password": "Pass1234!"} → token
-    And POST SubmitProposal {"GigID": gig.ID, "BidAmount": 40000} → proposal
+    And POST SubmitProposal {"ID": gig.ID, "BidAmount": 40000} → proposal
 
     Given POST Login {"Email": "client-inv1@test.com", "Password": "Pass1234!"} → token
     And POST AcceptProposal {"ID": proposal.ID}
