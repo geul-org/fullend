@@ -302,12 +302,43 @@ func generateMethodFromIface(b *strings.Builder, implName, modelName string, m i
 	}
 
 	// Build call args from interface params (excluding QueryOpts params).
+	// For INSERT/UPDATE, reorder args to match SQL column order from sqlcQuery.Columns.
 	var callArgNames []string
-	for _, p := range m.Params {
-		if p.Type == "QueryOpts" {
-			continue
+	if query != nil && len(query.Columns) > 0 && len(m.Params) > 0 {
+		// Build param lookup: goName (lowercase first) → param name.
+		paramByCol := make(map[string]string) // sql_column → param name
+		for _, p := range m.Params {
+			if p.Type == "QueryOpts" {
+				continue
+			}
+			// Convert param name (camelCase) to snake_case for matching.
+			snakeName := goToSnake(p.Name)
+			paramByCol[snakeName] = p.Name
 		}
-		callArgNames = append(callArgNames, p.Name)
+		// Reorder: follow SQL column order, then append unmatched WHERE params.
+		matched := make(map[string]bool)
+		for _, col := range query.Columns {
+			if paramName, ok := paramByCol[col]; ok {
+				callArgNames = append(callArgNames, paramName)
+				matched[paramName] = true
+			}
+		}
+		// Append remaining params not matched by columns (e.g. WHERE id = $N).
+		for _, p := range m.Params {
+			if p.Type == "QueryOpts" {
+				continue
+			}
+			if !matched[p.Name] {
+				callArgNames = append(callArgNames, p.Name)
+			}
+		}
+	} else {
+		for _, p := range m.Params {
+			if p.Type == "QueryOpts" {
+				continue
+			}
+			callArgNames = append(callArgNames, p.Name)
+		}
 	}
 	callArgs := ""
 	if len(callArgNames) > 0 {
@@ -705,6 +736,22 @@ func snakeToGo(s string) string {
 			b.WriteString("ID")
 		} else {
 			b.WriteString(strings.ToUpper(p[:1]) + p[1:])
+		}
+	}
+	return b.String()
+}
+
+// goToSnake converts a Go camelCase/PascalCase name to snake_case.
+func goToSnake(s string) string {
+	var b strings.Builder
+	for i, r := range s {
+		if r >= 'A' && r <= 'Z' {
+			if i > 0 {
+				b.WriteByte('_')
+			}
+			b.WriteRune(r + ('a' - 'A'))
+		} else {
+			b.WriteRune(r)
 		}
 	}
 	return b.String()

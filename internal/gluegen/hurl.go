@@ -209,12 +209,25 @@ func writeAuthSection(buf *strings.Builder, doc *openapi3.T, captures map[string
 		body, _ := generateRequestBody(reqSchema)
 		buf.WriteString(body + "\n")
 		buf.WriteString("\nHTTP 200\n")
+
+		// Find token field name from response schema.
+		tokenField := "token"
+		if respSchema := getResponseSchema(loginOp); respSchema != nil && respSchema.Properties != nil {
+			for name := range respSchema.Properties {
+				lname := strings.ToLower(name)
+				if strings.Contains(lname, "token") || strings.Contains(lname, "accesstoken") {
+					tokenField = name
+					break
+				}
+			}
+		}
+
 		buf.WriteString("[Captures]\n")
-		buf.WriteString("token: jsonpath \"$.token\"\n")
+		buf.WriteString(fmt.Sprintf("token: jsonpath \"$.%s\"\n", tokenField))
 		captures["token"] = true
 
 		buf.WriteString("[Asserts]\n")
-		buf.WriteString("jsonpath \"$.token\" exists\n")
+		buf.WriteString(fmt.Sprintf("jsonpath \"$.%s\" exists\n", tokenField))
 		buf.WriteString("\n")
 	}
 }
