@@ -395,24 +395,25 @@ func CalculateRefund(req CalculateRefundRequest) (CalculateRefundResponse, error
 
 LLM에 이 에러 메시지를 그대로 전달하면 `@description`만 채우고 본체를 구현할 수 있다.
 
-## Middleware — gin Middleware (pkg/middleware/)
+## Middleware — BearerAuth (Generated)
 
-fullend provides built-in gin middleware. Automatically wired based on OpenAPI `securitySchemes`.
+gluegen이 `fullend.yaml` claims config를 기반으로 프로젝트별 `internal/middleware/bearerauth.go`를 생성한다. `pkg/middleware`는 존재하지 않음.
 
 ### BearerAuth Middleware
 
 ```go
-// pkg/middleware/bearerauth.go
+// internal/middleware/bearerauth.go (generated)
 func BearerAuth(secret string) gin.HandlerFunc
 ```
 
 - `fullend.yaml` `backend.middleware`에 `bearerAuth` 선언 + OpenAPI `securitySchemes`에 `bearerAuth` 존재 시 적용
-- `Authorization: Bearer <token>` → `auth.VerifyToken` → `c.Set("currentUser", &CurrentUser{...})`
+- `Authorization: Bearer <token>` → `pkg/auth.VerifyToken` → `c.Set("currentUser", &model.CurrentUser{...})`
 - abort하지 않음 — 토큰 없거나 유효하지 않으면 빈 `CurrentUser{}` 세팅. authorize 시퀀스가 권한 검사 담당.
+- OpenAPI에 bearerAuth 스킴이 있는데 claims config가 없으면 gen 시 에러 발생
 
 ### CurrentUser Type
 
-`CurrentUser`는 `fullend.yaml`의 `backend.auth.claims` 설정에서 생성된다.
+`CurrentUser`는 `fullend.yaml`의 `backend.auth.claims` 설정에서 생성된다 (필수).
 
 ```yaml
 # fullend.yaml
@@ -433,8 +434,8 @@ type CurrentUser struct {
 }
 ```
 
-- Claims 설정이 있으면 → claims 필드에서 `CurrentUser` struct 직접 생성 (Go 타입은 claim key에서 추론: `*_id` → `int64`, 나머지 → `string`)
-- Claims 설정이 없으면 → `type CurrentUser = middleware.CurrentUser` (fallback alias)
+- Claims 필드에서 `CurrentUser` struct 직접 생성 (Go 타입은 claim key에서 추론: `*_id` → `int64`, 나머지 → `string`)
+- Claims config는 인증이 있는 프로젝트에서 필수
 
 SSaC codegen이 `c.MustGet("currentUser").(*model.CurrentUser)` 생성 → 미들웨어가 세팅한 값을 핸들러에서 사용.
 

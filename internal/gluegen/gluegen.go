@@ -39,6 +39,11 @@ func Generate(input *GlueInput) error {
 		return fmt.Errorf("create internal dir: %w", err)
 	}
 
+	// Validate: bearerAuth requires claims config.
+	if hasBearerScheme(input.OpenAPIDoc) && len(input.Claims) == 0 {
+		return fmt.Errorf("OpenAPI has bearerAuth security scheme but fullend.yaml has no claims config")
+	}
+
 	models := collectModels(input.ServiceFuncs)
 	xConfigs := extractXConfigs(input.OpenAPIDoc)
 
@@ -419,6 +424,19 @@ func quotedJoin(ss []string) string {
 		quoted[i] = fmt.Sprintf("%q", s)
 	}
 	return strings.Join(quoted, ", ")
+}
+
+// hasBearerScheme checks if the OpenAPI doc has a bearerAuth security scheme.
+func hasBearerScheme(doc *openapi3.T) bool {
+	if doc == nil || doc.Components == nil || doc.Components.SecuritySchemes == nil {
+		return false
+	}
+	for _, ref := range doc.Components.SecuritySchemes {
+		if ref.Value != nil && ref.Value.Type == "http" && ref.Value.Scheme == "bearer" {
+			return true
+		}
+	}
+	return false
 }
 
 // hasDomains returns true if any service function has a non-empty Domain.

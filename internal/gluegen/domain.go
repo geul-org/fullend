@@ -129,7 +129,7 @@ func generateServerStructWithDomains(intDir string, serviceFuncs []ssacparser.Se
 	}
 
 	// 2. Generate central server.go.
-	return generateCentralServer(serviceDir, domains, serviceFuncs, modulePath, doc, claims)
+	return generateCentralServer(serviceDir, domains, serviceFuncs, modulePath, doc)
 }
 
 // generateDomainHandler creates service/{domain}/handler.go with the Handler struct.
@@ -199,7 +199,7 @@ func convertPathParamsGin(path string) string {
 }
 
 // generateCentralServer creates service/server.go that composes domain handlers with gin router.
-func generateCentralServer(serviceDir string, domains []string, serviceFuncs []ssacparser.ServiceFunc, modulePath string, doc *openapi3.T, claims map[string]string) error {
+func generateCentralServer(serviceDir string, domains []string, serviceFuncs []ssacparser.ServiceFunc, modulePath string, doc *openapi3.T) error {
 	// Build operationId → domain map.
 	opDomains := make(map[string]string)
 	for _, sf := range serviceFuncs {
@@ -243,15 +243,7 @@ func generateCentralServer(serviceDir string, domains []string, serviceFuncs []s
 	b.WriteString("}\n\n")
 
 	// Detect security schemes from OpenAPI.
-	hasBearer := false
-	if doc != nil && doc.Components != nil && doc.Components.SecuritySchemes != nil {
-		for _, ref := range doc.Components.SecuritySchemes {
-			if ref.Value != nil && ref.Value.Type == "http" && ref.Value.Scheme == "bearer" {
-				hasBearer = true
-				break
-			}
-		}
-	}
+	hasBearer := hasBearerScheme(doc)
 
 	// SetupRouter creates a gin.Engine with routes.
 	b.WriteString("// SetupRouter creates a gin.Engine that routes requests to the Server.\n")
@@ -317,11 +309,7 @@ func generateCentralServer(serviceDir string, domains []string, serviceFuncs []s
 	var imports []string
 	imports = append(imports, "\"github.com/gin-gonic/gin\"")
 	if hasBearer {
-		if len(claims) > 0 {
-			imports = append(imports, fmt.Sprintf("\"%s/internal/middleware\"", modulePath))
-		} else {
-			imports = append(imports, "\"github.com/geul-org/fullend/pkg/middleware\"")
-		}
+		imports = append(imports, fmt.Sprintf("\"%s/internal/middleware\"", modulePath))
 	}
 	if len(flatModels) > 0 || hasFlatFuncs {
 		imports = append(imports, fmt.Sprintf("\"%s/internal/model\"", modulePath))
