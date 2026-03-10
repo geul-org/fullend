@@ -17,6 +17,7 @@ type ddlColumn struct {
 	GoName  string // e.g. "InstructorID"
 	GoType  string // e.g. "int64"
 	FKTable string // e.g. "users" — REFERENCES target table (empty if no FK)
+	NotNull bool   // true if column has NOT NULL or is PRIMARY KEY
 }
 
 // includeMapping represents a resolved x-include → DDL FK mapping (forward FK only).
@@ -583,11 +584,15 @@ func parseDDLFiles(specsDir string) map[string]*ddlTable {
 				fkTable = fkMatch[1]
 			}
 
+			upperLine := strings.ToUpper(line)
+			notNull := strings.Contains(upperLine, "NOT NULL") || strings.Contains(upperLine, "PRIMARY KEY")
+
 			table.Columns = append(table.Columns, ddlColumn{
 				Name:    colName,
 				GoName:  snakeToGo(colName),
 				GoType:  sqlTypeToGo(sqlType),
 				FKTable: fkTable,
+				NotNull: notNull,
 			})
 		}
 
@@ -742,12 +747,21 @@ func snakeToGo(s string) string {
 }
 
 // goToSnake converts a Go camelCase/PascalCase name to snake_case.
+// Handles consecutive uppercase (e.g. clientID → client_id, freelancerID → freelancer_id).
 func goToSnake(s string) string {
+	runes := []rune(s)
 	var b strings.Builder
-	for i, r := range s {
+	for i, r := range runes {
 		if r >= 'A' && r <= 'Z' {
 			if i > 0 {
-				b.WriteByte('_')
+				prev := runes[i-1]
+				// Insert underscore before uppercase if previous is lowercase,
+				// or if previous is uppercase and next is lowercase (e.g. "ID" at end is kept together).
+				if prev >= 'a' && prev <= 'z' {
+					b.WriteByte('_')
+				} else if prev >= 'A' && prev <= 'Z' && i+1 < len(runes) && runes[i+1] >= 'a' && runes[i+1] <= 'z' {
+					b.WriteByte('_')
+				}
 			}
 			b.WriteRune(r + ('a' - 'A'))
 		} else {

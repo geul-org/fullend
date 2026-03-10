@@ -321,28 +321,38 @@ func buildXQueryParams(op *openapi3.Operation) string {
 	return strings.Join(params, "&")
 }
 
-// substitutePathParams replaces {ParamName} with {{param_name_id}} captured variables.
+// substitutePathParams replaces {ParamName} with {{captured_var}} using captured variables.
+// For {ID}, it looks at the preceding path segment to find the matching capture (e.g. /gigs/{ID} → gig_id).
 func substitutePathParams(path string, captures map[string]bool) string {
-	var result strings.Builder
-	i := 0
-	for i < len(path) {
-		openBrace := strings.Index(path[i:], "{")
-		if openBrace < 0 {
-			result.WriteString(path[i:])
-			break
+	segments := strings.Split(path, "/")
+	for i, seg := range segments {
+		if !strings.HasPrefix(seg, "{") || !strings.HasSuffix(seg, "}") {
+			continue
 		}
-		result.WriteString(path[i : i+openBrace])
-		closeBrace := strings.Index(path[i+openBrace:], "}")
-		if closeBrace < 0 {
-			result.WriteString(path[i+openBrace:])
-			break
+		paramName := seg[1 : len(seg)-1]
+		snakeParam := pascalToSnakeHurl(paramName)
+
+		// First, check if the plain snake param exists in captures.
+		if captures[snakeParam] {
+			segments[i] = "{{" + snakeParam + "}}"
+			continue
 		}
-		paramName := path[i+openBrace+1 : i+openBrace+closeBrace]
-		varName := pascalToSnakeHurl(paramName)
-		result.WriteString("{{" + varName + "}}")
-		i = i + openBrace + closeBrace + 1
+
+		// Derive from preceding segment: /gigs/{ID} → gig_id.
+		if i > 0 {
+			resource := segments[i-1]
+			singular := strings.TrimSuffix(resource, "s")
+			derivedVar := singular + "_" + snakeParam
+			if captures[derivedVar] {
+				segments[i] = "{{" + derivedVar + "}}"
+				continue
+			}
+		}
+
+		// Fallback: use plain snake param.
+		segments[i] = "{{" + snakeParam + "}}"
 	}
-	return result.String()
+	return strings.Join(segments, "/")
 }
 
 // pascalToSnakeHurl converts PascalCase to snake_case for Hurl variable names.

@@ -12,10 +12,10 @@ import "github.com/gigbridge/api/internal/billing"
 // @put Proposal.UpdateStatus({ID: proposal.ID, Status: "accepted"})
 // @put Gig.AssignFreelancer({ID: gig.ID, FreelancerID: proposal.FreelancerID})
 // @put Gig.UpdateStatus({ID: gig.ID, Status: "in_progress"})
-// @call int64 transactionID = billing.HoldEscrow({GigID: gig.ID, Amount: gig.Budget, ClientID: gig.ClientID})
+// @call billing.HoldEscrowResponse holdEscrowResult = billing.HoldEscrow({GigID: gig.ID, Amount: gig.Budget, ClientID: gig.ClientID})
 // @get Gig gig = Gig.FindByID({ID: gig.ID})
 // @response {
 //   gig: gig,
-//   transactionID: transactionID
+//   transactionID: holdEscrowResult.TransactionID
 // }
 func AcceptProposal() {}

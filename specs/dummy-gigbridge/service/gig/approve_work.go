@@ -7,10 +7,10 @@ import "github.com/gigbridge/api/internal/billing"
 // @auth "approve" "gig" {id: gig.ID} "Not authorized"
 // @state gig {status: gig.Status} "ApproveWork" "Cannot approve work"
 // @put Gig.UpdateStatus({ID: gig.ID, Status: "completed"})
-// @call int64 transactionID = billing.ReleaseFunds({GigID: gig.ID, Amount: gig.Budget, FreelancerID: gig.FreelancerID})
+// @call billing.ReleaseFundsResponse releaseFundsResult = billing.ReleaseFunds({GigID: gig.ID, Amount: gig.Budget, FreelancerID: gig.FreelancerID})
 // @get Gig gig = Gig.FindByID({ID: gig.ID})
 // @response {
 //   gig: gig,
-//   transactionID: transactionID
+//   transactionID: releaseFundsResult.TransactionID
 // }
 func ApproveWork() {}

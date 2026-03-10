@@ -5,7 +5,7 @@ CREATE TABLE gigs (
     description TEXT NOT NULL,
     budget INT NOT NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'draft',
-    freelancer_id BIGINT REFERENCES users(id),
+    freelancer_id BIGINT NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 

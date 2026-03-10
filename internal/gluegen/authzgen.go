@@ -55,6 +55,7 @@ import (
 	"database/sql"
 	_ "embed"
 	"fmt"
+	"os"
 
 	"github.com/open-policy-agent/opa/v1/rego"
 
@@ -90,7 +91,11 @@ func New(db *sql.DB) (*OPAAuthorizer, error) {
 }
 
 // Check evaluates the OPA policy. Returns error if denied or evaluation fails.
+// Set DISABLE_AUTHZ=1 to bypass authorization checks.
 func (a *OPAAuthorizer) Check(user *model.CurrentUser, action, resource string, input interface{}) error {
+	if os.Getenv("DISABLE_AUTHZ") == "1" {
+		return nil
+	}
 	var resourceID interface{}
 	if in, ok := input.(Input); ok {
 		resourceID = in.ID

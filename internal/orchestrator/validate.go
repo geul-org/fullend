@@ -282,6 +282,13 @@ func validateDDL(root string) (reporter.StepResult, *ssacvalidator.SymbolTable) 
 		}
 	}
 
+	// Check nullable columns (NOT NULL required on all columns).
+	if nullables := checkDDLNullableColumns(root); len(nullables) > 0 {
+		for _, n := range nullables {
+			step.Errors = append(step.Errors, n)
+		}
+	}
+
 	if len(step.Errors) > 0 {
 		step.Status = reporter.Fail
 	} else {
@@ -612,6 +619,59 @@ func validateConfig(path string) (reporter.StepResult, *projectconfig.ProjectCon
 	}
 	step.Summary = strings.Join(parts, ", ")
 	return step, cfg
+}
+
+// checkDDLNullableColumns scans DDL files for columns missing NOT NULL.
+// PRIMARY KEY columns are implicitly NOT NULL and are excluded.
+func checkDDLNullableColumns(root string) []string {
+	dbDir := filepath.Join(root, "db")
+	entries, err := os.ReadDir(dbDir)
+	if err != nil {
+		return nil
+	}
+
+	createRe := regexp.MustCompile(`(?i)CREATE\s+TABLE\s+(\w+)`)
+	colRe := regexp.MustCompile(`^(\w+)\s+\w+`)
+
+	var errs []string
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dbDir, entry.Name()))
+		if err != nil {
+			continue
+		}
+		content := string(data)
+		tableMatch := createRe.FindStringSubmatch(content)
+		if tableMatch == nil {
+			continue
+		}
+		tableName := tableMatch[1]
+
+		for _, line := range strings.Split(content, "\n") {
+			trimmed := strings.TrimSpace(line)
+			// Skip non-column lines.
+			if trimmed == "" || strings.HasPrefix(trimmed, "--") || strings.HasPrefix(strings.ToUpper(trimmed), "CREATE") || strings.HasPrefix(trimmed, ")") {
+				continue
+			}
+			// Skip constraints (PRIMARY KEY, UNIQUE, CHECK, FOREIGN KEY, CONSTRAINT).
+			upper := strings.ToUpper(trimmed)
+			if strings.HasPrefix(upper, "PRIMARY KEY") || strings.HasPrefix(upper, "UNIQUE") || strings.HasPrefix(upper, "CHECK") || strings.HasPrefix(upper, "FOREIGN KEY") || strings.HasPrefix(upper, "CONSTRAINT") {
+				continue
+			}
+			m := colRe.FindStringSubmatch(trimmed)
+			if m == nil {
+				continue
+			}
+			colName := m[1]
+			if strings.Contains(upper, "PRIMARY KEY") || strings.Contains(upper, "NOT NULL") {
+				continue
+			}
+			errs = append(errs, fmt.Sprintf("DDL: 테이블 %q 컬럼 %q — NOT NULL이 없습니다. NOT NULL DEFAULT 값을 지정하세요", tableName, colName))
+		}
+	}
+	return errs
 }
 
 // checkPathParamConflicts detects path param name conflicts at the same segment position.
