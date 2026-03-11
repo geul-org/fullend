@@ -1,9 +1,0 @@
-
-package service
-
-// @auth "create" "course" {} "권한 없음"
-// @post Course course = Course.Create(currentUser.ID, request.Title, request.Description, request.Category, request.Level, request.Price)
-// @response {
-//   course: course
-// }
-func CreateCourse() {}

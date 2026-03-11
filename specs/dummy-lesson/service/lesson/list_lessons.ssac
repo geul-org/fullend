@@ -1,8 +1,0 @@
-
-package service
-
-// @get []Lesson lessons = Lesson.ListByCourse(request.CourseID)
-// @response {
-//   lessons: lessons
-// }
-func ListLessons() {}
