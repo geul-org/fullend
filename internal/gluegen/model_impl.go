@@ -235,9 +235,21 @@ func generateModelFile(modelDir string, modelName string, methods []ifaceMethod,
 
 	b.WriteString("package model\n\n")
 
+	// Check if any method returns pagination.Page or pagination.Cursor.
+	needsPagination := false
+	for _, method := range methods {
+		if strings.Contains(method.ReturnSig, "pagination.Page[") || strings.Contains(method.ReturnSig, "pagination.Cursor[") {
+			needsPagination = true
+			break
+		}
+	}
+
 	b.WriteString("import (\n")
 	b.WriteString("\t\"context\"\n")
 	b.WriteString("\t\"database/sql\"\n")
+	if needsPagination {
+		b.WriteString("\n\t\"github.com/geul-org/fullend/pkg/pagination\"\n")
+	}
 	b.WriteString(")\n\n")
 
 	// Struct definition.
@@ -357,6 +369,7 @@ func generateMethodFromIface(b *strings.Builder, implName, modelName string, m i
 		}
 	}
 	isList := isListMethod(m.Name) && hasQueryOpts
+	isPageReturn := strings.Contains(m.ReturnSig, "pagination.Page[")
 	isFind := strings.HasPrefix(m.Name, "Find")
 
 	// Check if return type is a slice (e.g. "[]Lesson" in "([]Lesson, error)").
@@ -364,7 +377,7 @@ func generateMethodFromIface(b *strings.Builder, implName, modelName string, m i
 
 	switch {
 	case isList:
-		// List method with dynamic SQL: ([]Type, int, error)
+		// List method with dynamic SQL returning *pagination.Page[T] or ([]T, int, error).
 		baseWhere := ""
 		baseArgCount := 0
 		if query != nil && query.SQL != "" {
@@ -388,9 +401,9 @@ func generateMethodFromIface(b *strings.Builder, implName, modelName string, m i
 		if len(callArgNames) > 0 {
 			b.WriteString("\tcountArgs = append(baseArgs, countArgs...)\n")
 		}
-		b.WriteString("\tvar total int\n")
+		b.WriteString("\tvar total int64\n")
 		b.WriteString("\tif err := m.db.QueryRowContext(context.Background(), countSQL, countArgs...).Scan(&total); err != nil {\n")
-		b.WriteString("\t\treturn nil, 0, err\n")
+		b.WriteString("\t\treturn nil, err\n")
 		b.WriteString("\t}\n\n")
 
 		// Select query.
@@ -400,14 +413,14 @@ func generateMethodFromIface(b *strings.Builder, implName, modelName string, m i
 		}
 		b.WriteString("\trows, err := m.db.QueryContext(context.Background(), selectSQL, selectArgs...)\n")
 		b.WriteString("\tif err != nil {\n")
-		b.WriteString("\t\treturn nil, 0, err\n")
+		b.WriteString("\t\treturn nil, err\n")
 		b.WriteString("\t}\n")
 		b.WriteString("\tdefer rows.Close()\n")
 		b.WriteString(fmt.Sprintf("\titems := make([]%s, 0)\n", modelName))
 		b.WriteString("\tfor rows.Next() {\n")
 		b.WriteString(fmt.Sprintf("\t\tv, err := scan%s(rows)\n", modelName))
 		b.WriteString("\t\tif err != nil {\n")
-		b.WriteString("\t\t\treturn nil, 0, err\n")
+		b.WriteString("\t\t\treturn nil, err\n")
 		b.WriteString("\t\t}\n")
 		b.WriteString("\t\titems = append(items, *v)\n")
 		b.WriteString("\t}\n")
@@ -415,10 +428,14 @@ func generateMethodFromIface(b *strings.Builder, implName, modelName string, m i
 		for _, inc := range includes {
 			helperName := "include" + strings.ToUpper(inc.IncludeName[:1]) + inc.IncludeName[1:]
 			b.WriteString(fmt.Sprintf("\tif err := m.%s(items); err != nil {\n", helperName))
-			b.WriteString("\t\treturn nil, 0, err\n")
+			b.WriteString("\t\treturn nil, err\n")
 			b.WriteString("\t}\n")
 		}
-		b.WriteString("\treturn items, total, nil\n")
+		if isPageReturn {
+			b.WriteString(fmt.Sprintf("\treturn &pagination.Page[%s]{Items: items, Total: total}, nil\n", modelName))
+		} else {
+			b.WriteString("\treturn items, total, nil\n")
+		}
 		b.WriteString("}\n")
 
 	case isSliceReturn:

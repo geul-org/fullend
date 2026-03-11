@@ -102,7 +102,8 @@ deploy:
 // @delete Model.Method(args...)                — Delete (no result, 0-arg = WARNING)
 ```
 
-- `@get`: 0개 arg 허용 (전체 조회 `Course.List(query)` 등). 페이지네이션은 `query` arg + OpenAPI `x-pagination`이 함께 담당.
+- `@get`: 0개 arg 허용 (전체 조회 등). 페이지네이션은 `{Query: query}` 입력 + OpenAPI `x-pagination`이 함께 담당.
+- `@get` 반환 타입: `x-pagination: offset` → `Page[T]`, `x-pagination: cursor` → `Cursor[T]`, 없음 → `[]T` 또는 단건 `T`.
 - `@delete`: 0개 arg 시 WARNING ("전체 삭제 의도가 맞는지 확인"). `@delete!`로 WARNING 억제 가능.
 
 #### Args Format — Dot Notation
@@ -116,19 +117,46 @@ deploy:
 
 Reserved sources: `request`, `currentUser`, `config`, `query` — cannot be used as result variable names.
 
-#### `query` Reserved Source
+#### `query` Reserved Source & Pagination Types
 
-List methods that need pagination/sort/filter must explicitly include `query` as an argument:
+List methods that need pagination/sort/filter must use `{Query: query}` input syntax:
 
 ```go
-// @get []Course courses = Course.List(query)                        — with pagination
-// @get []Lesson lessons = Lesson.ListByCourse(request.CourseID)     — without pagination
+// @get Page[Gig] gigPage = Gig.List({Query: query})                 — offset pagination
+// @get Cursor[Gig] gigCursor = Gig.List({Query: query})             — cursor pagination
+// @get []Lesson lessons = Lesson.ListByCourse(request.CourseID)      — no pagination
 ```
 
-- `query` → adds `opts QueryOpts` parameter to the model interface method
-- Without `query` → model method returns `([]Type, error)` (simple slice, no total count)
-- With `query` → model method returns `([]Type, int, error)` (slice + total count)
-- Only use `query` when the endpoint has `x-pagination`/`x-sort`/`x-filter` in OpenAPI
+- `{Query: query}` → adds `opts QueryOpts` parameter to the model interface method
+- Input must use `{Key: value}` format — `{query}` without colon is a parse ERROR
+- Only use `{Query: query}` when the endpoint has `x-pagination`/`x-sort`/`x-filter` in OpenAPI
+
+#### Pagination Return Types (`Page[T]`, `Cursor[T]`)
+
+`fullend/pkg/pagination/` provides two generic wrapper types:
+
+```go
+type Page[T any] struct {
+    Items []T   `json:"items"`
+    Total int64 `json:"total"`
+}
+
+type Cursor[T any] struct {
+    Items      []T    `json:"items"`
+    NextCursor string `json:"next_cursor"`
+    HasNext    bool   `json:"has_next"`
+}
+```
+
+x-pagination style determines the required return type:
+
+| x-pagination style | Required @get type | Model interface return |
+|---|---|---|
+| `offset` | `Page[T]` | `(*pagination.Page[T], error)` |
+| `cursor` | `Cursor[T]` | `(*pagination.Cursor[T], error)` |
+| 없음 | `[]T` | `([]T, error)` |
+
+Mismatch between x-pagination style and @get return type is an ERROR.
 
 #### Guards
 
@@ -158,15 +186,24 @@ Target: variable (`course`) or variable.field (`course.InstructorID`)
 // @call package.Func(args...)                  — Without result (guard-style error)
 ```
 
-#### Response — Field Mapping Block
+#### Response — Two Forms
 
 ```go
+// 간단쓰기 — struct 그대로 JSON 직렬화
+// @response gigPage
+// → c.JSON(200, gigPage)
+
+// 풀어쓰기 — 필드 매핑 블록
 // @response {
 //   fieldName: variable,
 //   fieldName: variable.Member,
 //   fieldName: "literal"
 // }
+// → c.JSON(200, gin.H{...})
 ```
+
+- `@response 변수명`: struct를 그대로 반환 (Page[T], Cursor[T] 등에 적합)
+- `@response { ... }`: 필드를 개별 매핑하여 gin.H로 구성 (단건 조회 등에 적합)
 
 ### WARNING Suppression (`!` Suffix)
 
@@ -190,7 +227,7 @@ Target: variable (`course`) or variable.field (`course.InstructorID`)
 | `@state` | State transition check | `diagramID {inputs} "transition" "message"` | — |
 | `@auth` | Permission check | `"action" "resource" {inputs} "message"` | — |
 | `@call` | External function call | `[Type var =] package.Func(args...)` | — |
-| `@response` | JSON response return | `{ field: var, ... }` | — |
+| `@response` | JSON response return | `varName` or `{ field: var, ... }` | — |
 
 ### @call — Package-Level Function Call
 
@@ -594,9 +631,10 @@ Syntax (single format only):
 
 ### x- Extension Codegen Effects
 
-- SSaC: Model methods with `query` arg get `opts QueryOpts` parameter added to interface
-- SSaC: `query` + `:many` -> return type `([]T, int, error)` (includes total count)
-- SSaC: Model methods without `query` returning `[]T` -> return type `([]T, error)` (simple slice)
+- SSaC: Model methods with `{Query: query}` input get `opts QueryOpts` parameter added to interface
+- SSaC: `{Query: query}` + `x-pagination: offset` → return type `(*pagination.Page[T], error)`
+- SSaC: `{Query: query}` + `x-pagination: cursor` → return type `(*pagination.Cursor[T], error)`
+- SSaC: Model methods without `{Query: query}` returning `[]T` → return type `([]T, error)` (simple slice)
 - STML: `data-paginate` -> `useState(page, limit)` + prev/next buttons
 - STML: `data-sort` -> `useState(sortBy, sortDir)` + toggle buttons
 - STML: `data-filter` -> `useState(filters)` + filter inputs

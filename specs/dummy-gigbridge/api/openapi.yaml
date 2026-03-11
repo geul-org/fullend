@@ -177,7 +177,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  gigs:
+                  items:
                     type: array
                     items:
                       $ref: "#/components/schemas/Gig"

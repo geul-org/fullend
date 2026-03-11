@@ -2,9 +2,9 @@
   <h1>Gigs</h1>
 
   <section data-fetch="ListGigs" data-paginate data-sort="created_at:desc" data-filter="status">
-    <div data-state="gigs.loading">Loading...</div>
-    <p data-state="gigs.empty">No gigs found</p>
-    <ul data-each="gigs">
+    <div data-state="items.loading">Loading...</div>
+    <p data-state="items.empty">No gigs found</p>
+    <ul data-each="items">
       <li>
         <h3 data-bind="Title"></h3>
         <p data-bind="Description"></p>

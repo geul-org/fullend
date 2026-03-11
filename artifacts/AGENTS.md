@@ -73,8 +73,8 @@ for f in <tables in dependency order>; do
   psql -h localhost -p <port> -U postgres -d <dbname> -f specs/<project>/db/$f.sql
 done
 
-# 서버 기동
-JWT_SECRET=test-secret-key ./server -dsn "postgres://..." &
+# 서버 기동 (DISABLE_AUTHZ=1, DISABLE_STATE_CHECK=1은 스모크 테스트용)
+DISABLE_AUTHZ=1 DISABLE_STATE_CHECK=1 JWT_SECRET=test-secret-key ./server -dsn "postgres://..." &
 ```
 
 ## 7. Hurl 테스트 실행
