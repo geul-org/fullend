@@ -6,11 +6,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/geul-org/fullend/internal/policy"
 	ssacparser "github.com/geul-org/ssac/parser"
 )
 
 // generateMain creates backend/go.mod (if missing) and backend/cmd/main.go.
-func generateMain(artifactsDir string, models []string, modulePath string, queueBackend string, serviceFuncs []ssacparser.ServiceFunc) error {
+func generateMain(artifactsDir string, models []string, modulePath string, queueBackend string, serviceFuncs []ssacparser.ServiceFunc, policies []*policy.Policy) error {
 	if modulePath == "" {
 		base := filepath.Base(artifactsDir)
 		modulePath = base + "/backend"
@@ -47,12 +48,13 @@ func generateMain(artifactsDir string, models []string, modulePath string, queue
 	authzImport := ""
 	authzInitBlock := ""
 	if hasAuthSequence(serviceFuncs) {
-		authzImport = fmt.Sprintf("\n\t\"%s/internal/authz\"", modulePath)
-		authzInitBlock = `
-	if err := authz.Init(conn); err != nil {
-		log.Fatalf("authz init failed: %v", err)
+		authzImport = "\n\t\"github.com/geul-org/fullend/pkg/authz\""
+		ownershipsCode := buildOwnershipsLiteral(policies)
+		authzInitBlock = fmt.Sprintf(`
+	if err := authz.Init(conn, %s); err != nil {
+		log.Fatalf("authz init failed: %%v", err)
 	}
-`
+`, ownershipsCode)
 	}
 
 	// Queue code blocks.
@@ -157,6 +159,23 @@ func hasAuthSequence(funcs []ssacparser.ServiceFunc) bool {
 		}
 	}
 	return false
+}
+
+// buildOwnershipsLiteral generates Go code for []authz.OwnershipMapping literal.
+func buildOwnershipsLiteral(policies []*policy.Policy) string {
+	var mappings []string
+	for _, p := range policies {
+		for _, om := range p.Ownerships {
+			mappings = append(mappings, fmt.Sprintf(
+				`{Resource: %q, Table: %q, Column: %q}`,
+				om.Resource, om.Table, om.Column,
+			))
+		}
+	}
+	if len(mappings) == 0 {
+		return "nil"
+	}
+	return "[]authz.OwnershipMapping{\n\t\t" + strings.Join(mappings, ",\n\t\t") + ",\n\t}"
 }
 
 // hasPublishSequence returns true if any function uses @publish.

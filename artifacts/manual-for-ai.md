@@ -337,24 +337,34 @@ Backends: S3 (`NewS3File`), LocalFile (`NewLocalFile`)
 
 #### authz — Authorization (OPA Rego)
 
-Singleton package-level API. Configured via `fullend.yaml` `authz.package` (default: `pkg/authz`).
+Singleton package-level API. Reads OPA policy from `OPA_POLICY_PATH` environment variable at runtime.
 
 ```go
-func Init(db *sql.DB) error
+func Init(db *sql.DB, ownerships []OwnershipMapping) error
 func Check(req CheckRequest) (CheckResponse, error)
 
 type CheckRequest struct {
     Action     string
     Resource   string
     UserID     int64
+    Role       string
     ResourceID int64
+}
+
+type OwnershipMapping struct {
+    Resource string // "gig", "proposal"
+    Table    string // "gigs", "proposals"
+    Column   string // "client_id", "freelancer_id"
 }
 ```
 
 - SSaC `@auth` generates `authz.Check(authz.CheckRequest{...})` calls
-- `authz.Init(conn)` is auto-generated in `main.go` when `@auth` is used
+- `Role: currentUser.Role` is auto-injected when `@auth` uses `currentUser`
+- `authz.Init(conn, ownerships)` is auto-generated in `main.go` with ownership mappings from Rego `@ownership` annotations
+- OPA input structure: `input.claims.user_id`, `input.claims.role`, `input.action`, `input.resource`, `input.resource_id`
+- `data.owners` is loaded from DB per request based on `@ownership` mappings
+- Set `OPA_POLICY_PATH` to the `.rego` file path (required unless `DISABLE_AUTHZ=1`)
 - Set `DISABLE_AUTHZ=1` to bypass checks
-- Custom authz package: set `authz.package` in `fullend.yaml`
 
 #### queue — Queue Pub/Sub
 
@@ -644,7 +654,8 @@ response.array count > N
 | Func arg count ↔ Request fields | ERROR |
 | Func arg type ↔ Request field type | ERROR |
 | DDL table → SSaC reference | ERROR |
-| DDL column → OpenAPI schema | WARNING |
+| SSaC @response field → OpenAPI response schema | ERROR |
+| OpenAPI response field → SSaC @response | WARNING |
 | `@publish` topic → `@subscribe` exists | WARNING |
 | `@subscribe` topic → `@publish` exists | WARNING |
 | `@subscribe` message fields → `@publish` payload fields | WARNING |

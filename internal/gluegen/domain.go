@@ -9,6 +9,7 @@ import (
 
 	"github.com/getkin/kin-openapi/openapi3"
 
+	"github.com/geul-org/fullend/internal/policy"
 	ssacparser "github.com/geul-org/ssac/parser"
 )
 
@@ -352,7 +353,7 @@ func generateCentralServer(serviceDir string, domains []string, serviceFuncs []s
 }
 
 // generateMainWithDomains creates cmd/main.go with domain handler initialization.
-func generateMainWithDomains(artifactsDir string, serviceFuncs []ssacparser.ServiceFunc, modulePath string, queueBackend string) error {
+func generateMainWithDomains(artifactsDir string, serviceFuncs []ssacparser.ServiceFunc, modulePath string, queueBackend string, policies []*policy.Policy) error {
 	if modulePath == "" {
 		base := filepath.Base(artifactsDir)
 		modulePath = base + "/backend"
@@ -425,7 +426,7 @@ func generateMainWithDomains(artifactsDir string, serviceFuncs []ssacparser.Serv
 	extraImports = append(extraImports, fmt.Sprintf("\n\t\"%s/internal/model\"", modulePath))
 	extraImports = append(extraImports, fmt.Sprintf("\t\"%s/internal/service\"", modulePath))
 	if anyNeedsAuth {
-		extraImports = append(extraImports, fmt.Sprintf("\t\"%s/internal/authz\"", modulePath))
+		extraImports = append(extraImports, "\t\"github.com/geul-org/fullend/pkg/authz\"")
 	}
 	for _, d := range domains {
 		extraImports = append(extraImports, fmt.Sprintf("\t%ssvc \"%s/internal/service/%s\"", d, modulePath, d))
@@ -435,13 +436,14 @@ func generateMainWithDomains(artifactsDir string, serviceFuncs []ssacparser.Serv
 	// Authz init block.
 	authzBlock := ""
 	if anyNeedsAuth {
-		authzBlock = `
+		ownershipsCode := buildOwnershipsLiteral(policies)
+		authzBlock = fmt.Sprintf(`
 	os.Setenv("JWT_SECRET", *jwtSecret)
 
-	if err := authz.Init(conn); err != nil {
-		log.Fatalf("authz init failed: %v", err)
+	if err := authz.Init(conn, %s); err != nil {
+		log.Fatalf("authz init failed: %%v", err)
 	}
-`
+`, ownershipsCode)
 	}
 
 	// Queue code blocks.

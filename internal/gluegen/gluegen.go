@@ -72,7 +72,7 @@ func Generate(input *GlueInput) error {
 		if err := generateServerStructWithDomains(intDir, input.ServiceFuncs, input.ModulePath, input.OpenAPIDoc, input.Claims); err != nil {
 			return fmt.Errorf("server.go (domain): %w", err)
 		}
-		if err := generateMainWithDomains(input.ArtifactsDir, input.ServiceFuncs, input.ModulePath, input.QueueBackend); err != nil {
+		if err := generateMainWithDomains(input.ArtifactsDir, input.ServiceFuncs, input.ModulePath, input.QueueBackend, input.Policies); err != nil {
 			return fmt.Errorf("main.go (domain): %w", err)
 		}
 	} else {
@@ -88,7 +88,7 @@ func Generate(input *GlueInput) error {
 		if err := generateAuthStub(intDir); err != nil {
 			return fmt.Errorf("auth.go: %w", err)
 		}
-		if err := generateMain(input.ArtifactsDir, models, input.ModulePath, input.QueueBackend, input.ServiceFuncs); err != nil {
+		if err := generateMain(input.ArtifactsDir, models, input.ModulePath, input.QueueBackend, input.ServiceFuncs, input.Policies); err != nil {
 			return fmt.Errorf("main.go: %w", err)
 		}
 	}
@@ -242,9 +242,9 @@ func transformSource(src string, models, funcs []string, modulePath string, xCon
 		src = strings.ReplaceAll(src, "\"states/", fmt.Sprintf("\"%s/internal/states/", modulePath))
 	}
 
-	// Fix authz import: "authz" → "{modulePath}/internal/authz"
+	// Fix authz import: "authz" → "github.com/geul-org/fullend/pkg/authz"
 	if strings.Contains(src, "\t\"authz\"\n") {
-		src = strings.ReplaceAll(src, "\t\"authz\"\n", fmt.Sprintf("\t\"%s/internal/authz\"\n", modulePath))
+		src = strings.ReplaceAll(src, "\t\"authz\"\n", "\t\"github.com/geul-org/fullend/pkg/authz\"\n")
 	}
 
 	// Fix queue import: "queue" → "github.com/geul-org/fullend/pkg/queue"

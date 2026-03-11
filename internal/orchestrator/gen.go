@@ -510,12 +510,7 @@ func genAuthz(policyDir, specsDir, artifactsDir string) reporter.StepResult {
 		return step
 	}
 
-	modulePath := determineModulePath(specsDir, artifactsDir)
-	var authzPackage string
-	if cfg, err := projectconfig.Load(specsDir); err == nil && cfg.Authz != nil {
-		authzPackage = cfg.Authz.Package
-	}
-	if err := gluegen.GenerateAuthzPackage(policies, artifactsDir, modulePath, authzPackage); err != nil {
+	if err := gluegen.GenerateAuthzPackage(policies, artifactsDir); err != nil {
 		step.Status = reporter.Fail
 		step.Errors = append(step.Errors, fmt.Sprintf("authz-gen error: %v", err))
 		return step

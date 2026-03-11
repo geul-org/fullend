@@ -32,7 +32,7 @@ Create 10 SSOTs in `specs/<project>/`:
 | `cache.backend` | Cache storage | (none) |
 | `file.backend` | File storage | (none) |
 | `queue.backend` | Queue pub/sub | (none) |
-| `authz.package` | Custom authz package | `pkg/authz` (OPA Rego) |
+| `authz.package` | Custom authz package (skip default codegen) | (none) |
 
 ### Authoring Principles
 
@@ -99,6 +99,7 @@ python3 ~/.clari/repos/fullend/artifacts/scripts/dummy-smtp.py &
 
 # Start server (DISABLE flags for smoke testing)
 DISABLE_AUTHZ=1 DISABLE_STATE_CHECK=1 JWT_SECRET=test-secret-key \
+  OPA_POLICY_PATH=../../specs/<project>/policy/authz.rego \
   SMTP_HOST=127.0.0.1 SMTP_PORT=2525 SMTP_USERNAME=test SMTP_PASSWORD=test SMTP_FROM=test@test.com \
   ./server -dsn "postgres://..." &
 ```
@@ -121,7 +122,7 @@ Pass criteria:
 |---|---|
 | validate | Fix SSOTs → re-validate |
 | gen | Codegen bug → report immediately, no workarounds |
-| go build (authz) | `@auth` generates `authz.Check()` package function. Ensure `authz.Init(conn)` is in main.go (auto-generated). Set `DISABLE_AUTHZ=1` to bypass. |
+| go build (authz) | `@auth` generates `authz.Check()` via `fullend/pkg/authz`. Set `OPA_POLICY_PATH` to `.rego` file path. Set `DISABLE_AUTHZ=1` to bypass. |
 | go build (config) | `config.*` is NOT supported in SSaC inputs. Func reads its own config via `os.Getenv()`. |
 | go build | SSOT or codegen bug → never edit generated code |
 | hurl --test | Classify cause (SSOT vs codegen) → report |

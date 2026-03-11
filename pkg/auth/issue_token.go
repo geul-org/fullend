@@ -17,7 +17,7 @@ type IssueTokenRequest struct {
 }
 
 type IssueTokenResponse struct {
-	AccessToken string
+	AccessToken string `json:"access_token"`
 }
 
 func IssueToken(req IssueTokenRequest) (IssueTokenResponse, error) {
