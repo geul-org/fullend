@@ -1,4 +1,4 @@
-# Phase 024: `fullend gen-model` — 외부 OpenAPI → Go 모델 생성
+# ✅ Phase 024: `fullend gen-model` — 외부 OpenAPI → Go 모델 생성
 
 ## 목표
 
