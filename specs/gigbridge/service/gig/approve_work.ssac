@@ -5,7 +5,7 @@ import "github.com/geul-org/fullend/pkg/mail"
 
 // @get Gig gig = Gig.FindByID({ID: request.id})
 // @empty gig "Gig not found"
-// @auth "ApproveWork" "gig" {UserID: currentUser.ID, ResourceID: gig.ClientID} "Not authorized"
+// @auth "ApproveWork" "gig" {UserID: currentUser.ID, Role: currentUser.Role, ResourceID: gig.ClientID} "Not authorized"
 // @state gig {Status: gig.Status} "ApproveWork" "Cannot approve work"
 // @put Gig.UpdateStatus({Status: "completed", ID: gig.ID})
 // @call billing.ReleaseFundsResponse release = billing.ReleaseFunds({GigID: gig.ID, Amount: gig.Budget, FreelancerID: gig.FreelancerID})

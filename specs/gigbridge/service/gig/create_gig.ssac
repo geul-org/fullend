@@ -1,6 +1,6 @@
 package service
 
-// @auth "CreateGig" "gig" {UserID: currentUser.ID} "Only clients can create gigs"
+// @auth "CreateGig" "gig" {UserID: currentUser.ID, Role: currentUser.Role} "Only clients can create gigs"
 // @post Gig gig = Gig.Create({ClientID: currentUser.ID, Title: request.title, Description: request.description, Budget: request.budget, Status: "draft"})
 // @response { gig: gig }
 func CreateGig() {}

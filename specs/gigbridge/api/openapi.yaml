@@ -108,6 +108,7 @@ paths:
                   type: string
                 role:
                   type: string
+                  enum: [client, freelancer, admin]
                 name:
                   type: string
       responses:

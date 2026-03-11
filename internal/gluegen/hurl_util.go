@@ -14,6 +14,11 @@ func generateDummyValue(fieldName string, schema *openapi3.Schema) interface{} {
 		return "test_string"
 	}
 
+	// Use first enum value if available.
+	if len(schema.Enum) > 0 {
+		return fmt.Sprint(schema.Enum[0])
+	}
+
 	// Field name hints (checked before type-based defaults).
 	lower := strings.ToLower(fieldName)
 	switch {

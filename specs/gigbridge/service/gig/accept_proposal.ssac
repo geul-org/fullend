@@ -6,7 +6,7 @@ import "github.com/gigbridge/api/internal/billing"
 // @empty proposal "Proposal not found"
 // @get Gig gig = Gig.FindByID({ID: proposal.GigID})
 // @empty gig "Gig not found"
-// @auth "AcceptProposal" "gig" {UserID: currentUser.ID, ResourceID: gig.ClientID} "Not authorized"
+// @auth "AcceptProposal" "gig" {UserID: currentUser.ID, Role: currentUser.Role, ResourceID: gig.ClientID} "Not authorized"
 // @state proposal {Status: proposal.Status} "AcceptProposal" "Cannot accept proposal"
 // @state gig {Status: gig.Status} "AcceptProposal" "Cannot accept proposal for this gig"
 // @put Proposal.UpdateStatus({Status: "accepted", ID: proposal.ID})

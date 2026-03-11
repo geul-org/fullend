@@ -11,6 +11,27 @@ const (
 	BearerAuthScopes = "bearerAuth.Scopes"
 )
 
+// Defines values for RegisterJSONBodyRole.
+const (
+	Admin      RegisterJSONBodyRole = "admin"
+	Client     RegisterJSONBodyRole = "client"
+	Freelancer RegisterJSONBodyRole = "freelancer"
+)
+
+// Valid indicates whether the value is a known member of the RegisterJSONBodyRole enum.
+func (e RegisterJSONBodyRole) Valid() bool {
+	switch e {
+	case Admin:
+		return true
+	case Client:
+		return true
+	case Freelancer:
+		return true
+	default:
+		return false
+	}
+}
+
 // Gig defines model for Gig.
 type Gig struct {
 	Budget       *int       `json:"budget,omitempty"`
@@ -31,11 +52,14 @@ type LoginJSONBody struct {
 
 // RegisterJSONBody defines parameters for Register.
 type RegisterJSONBody struct {
-	Email    string `json:"email"`
-	Name     string `json:"name"`
-	Password string `json:"password"`
-	Role     string `json:"role"`
+	Email    string               `json:"email"`
+	Name     string               `json:"name"`
+	Password string               `json:"password"`
+	Role     RegisterJSONBodyRole `json:"role"`
 }
+
+// RegisterJSONBodyRole defines parameters for Register.
+type RegisterJSONBodyRole string
 
 // ListGigsParams defines parameters for ListGigs.
 type ListGigsParams struct {

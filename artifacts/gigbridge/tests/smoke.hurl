@@ -10,7 +10,7 @@ Content-Type: application/json
   "email": "test_string",
   "name": "test_string",
   "password": "Password1234!",
-  "role": "test_string"
+  "role": "client"
 }
 
 HTTP 200

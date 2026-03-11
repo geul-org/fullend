@@ -2,7 +2,7 @@ package service
 
 // @get Gig gig = Gig.FindByID({ID: request.id})
 // @empty gig "Gig not found"
-// @auth "SubmitWork" "gig_assignee" {UserID: currentUser.ID, ResourceID: gig.FreelancerID} "Not authorized"
+// @auth "SubmitWork" "gig_assignee" {UserID: currentUser.ID, Role: currentUser.Role, ResourceID: gig.FreelancerID} "Not authorized"
 // @state gig {Status: gig.Status} "SubmitWork" "Cannot submit work"
 // @put Gig.UpdateStatus({Status: "under_review", ID: gig.ID})
 // @get Gig updatedGig = Gig.FindByID({ID: gig.ID})

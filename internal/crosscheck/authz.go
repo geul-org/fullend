@@ -11,6 +11,7 @@ var defaultCheckRequestFields = map[string]bool{
 	"Action":     true,
 	"Resource":   true,
 	"UserID":     true,
+	"Role":       true,
 	"ResourceID": true,
 }
 
@@ -38,7 +39,7 @@ func CheckAuthz(funcs []ssacparser.ServiceFunc, authzPackage string) []CrossErro
 					errs = append(errs, CrossError{
 						Rule:    "Authz ↔ SSaC",
 						Context: ctx,
-						Message: fmt.Sprintf("@auth input 필드 %q가 CheckRequest에 없음 (가능: Action, Resource, UserID, ResourceID)", key),
+						Message: fmt.Sprintf("@auth input 필드 %q가 CheckRequest에 없음 (가능: Action, Resource, UserID, Role, ResourceID)", key),
 						Level:   "ERROR",
 					})
 				}

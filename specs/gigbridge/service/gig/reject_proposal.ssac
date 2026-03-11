@@ -4,7 +4,7 @@ package service
 // @empty proposal "Proposal not found"
 // @get Gig gig = Gig.FindByID({ID: proposal.GigID})
 // @empty gig "Gig not found"
-// @auth "RejectProposal" "gig" {UserID: currentUser.ID, ResourceID: gig.ClientID} "Not authorized"
+// @auth "RejectProposal" "gig" {UserID: currentUser.ID, Role: currentUser.Role, ResourceID: gig.ClientID} "Not authorized"
 // @state proposal {Status: proposal.Status} "RejectProposal" "Cannot reject proposal"
 // @put Proposal.UpdateStatus({Status: "rejected", ID: proposal.ID})
 // @get Proposal updatedProposal = Proposal.FindByID({ID: proposal.ID})

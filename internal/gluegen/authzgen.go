@@ -67,6 +67,7 @@ type CheckRequest struct {
 	Action     string
 	Resource   string
 	UserID     int64
+	Role       string
 	ResourceID int64
 }
 
@@ -106,10 +107,10 @@ func Check(req CheckRequest) (CheckResponse, error) {
 	}
 
 	opaInput := map[string]interface{}{
-		"user":        map[string]interface{}{"id": req.UserID},
-		"action":      req.Action,
-		"resource":    req.Resource,
-		"resource_id": req.ResourceID,
+		"claims":            map[string]interface{}{"user_id": req.UserID, "role": req.Role},
+		"action":            req.Action,
+		"resource":          req.Resource,
+		"resource_owner_id": req.ResourceID,
 	}
 
 	results, err := globalEval.Eval(context.Background(), rego.EvalInput(opaInput))

@@ -41,7 +41,7 @@ func (h *Handler) RejectProposal(c *gin.Context) {
 		return
 	}
 
-	if _, err = authz.Check(authz.CheckRequest{Action: "RejectProposal", Resource: "gig", ResourceID: gig.ClientID, UserID: currentUser.ID}); err != nil {
+	if _, err = authz.Check(authz.CheckRequest{Action: "RejectProposal", Resource: "gig", ResourceID: gig.ClientID, Role: currentUser.Role, UserID: currentUser.ID}); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Not authorized"})
 		return
 	}

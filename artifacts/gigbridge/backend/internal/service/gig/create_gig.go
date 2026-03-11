@@ -23,7 +23,7 @@ func (h *Handler) CreateGig(c *gin.Context) {
 	description := req.Description
 	budget := req.Budget
 
-	if _, err := authz.Check(authz.CheckRequest{Action: "CreateGig", Resource: "gig", UserID: currentUser.ID}); err != nil {
+	if _, err := authz.Check(authz.CheckRequest{Action: "CreateGig", Resource: "gig", Role: currentUser.Role, UserID: currentUser.ID}); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Only clients can create gigs"})
 		return
 	}
