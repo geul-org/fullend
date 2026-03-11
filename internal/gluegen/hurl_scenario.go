@@ -189,16 +189,7 @@ func writeActionHurlV2(buf *strings.Builder, step scenario.Step, statusCode stri
 		if isTokenCapture {
 			*hasToken = true
 			*currentToken = step.Capture
-			tokenField := "token"
-			if respSchema := getResponseSchema(info.Op); respSchema != nil && respSchema.Properties != nil {
-				for name := range respSchema.Properties {
-					lname := strings.ToLower(name)
-					if strings.Contains(lname, "token") || strings.Contains(lname, "accesstoken") {
-						tokenField = name
-						break
-					}
-				}
-			}
+			tokenField := findTokenJSONPath(getResponseSchema(info.Op))
 			buf.WriteString("[Captures]\n")
 			buf.WriteString(fmt.Sprintf("%s: jsonpath \"$.%s\"\n", step.Capture, tokenField))
 		} else {

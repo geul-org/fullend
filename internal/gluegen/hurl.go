@@ -442,17 +442,8 @@ func writeAuthPair(buf *strings.Builder, registerOp *openapi3.Operation, registe
 		buf.WriteString(body + "\n")
 		buf.WriteString("\nHTTP 200\n")
 
-		// Find token field name from response schema.
-		tokenField := "token"
-		if respSchema := getResponseSchema(loginOp); respSchema != nil && respSchema.Properties != nil {
-			for name := range respSchema.Properties {
-				lname := strings.ToLower(name)
-				if strings.Contains(lname, "token") || strings.Contains(lname, "accesstoken") {
-					tokenField = name
-					break
-				}
-			}
-		}
+		// Find token field path from response schema (handles nested objects).
+		tokenField := findTokenJSONPath(getResponseSchema(loginOp))
 
 		tokenVar := "token" + suffix
 		buf.WriteString("[Captures]\n")
