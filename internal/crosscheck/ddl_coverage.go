@@ -46,7 +46,7 @@ func CheckDDLCoverage(
 				Rule:       "DDL → SSaC",
 				Context:    tableName,
 				Message:    fmt.Sprintf("DDL 테이블 %q가 SSaC에서 참조되지 않습니다", tableName),
-				Level:      "WARNING",
+				Level:      "ERROR",
 				Suggestion: fmt.Sprintf("더 이상 사용하지 않는 테이블이면 DDL에 -- @archived를 추가하세요"),
 			})
 		}

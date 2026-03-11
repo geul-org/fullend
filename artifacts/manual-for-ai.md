@@ -441,5 +441,5 @@ response.array count > N
 | Func body TODO stub | ERROR |
 | Func arg count ↔ Request fields | ERROR |
 | Func arg type ↔ Request field type | ERROR |
-| DDL table → SSaC reference | WARNING |
+| DDL table → SSaC reference | ERROR |
 | DDL column → OpenAPI schema | WARNING |

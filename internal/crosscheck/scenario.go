@@ -191,10 +191,17 @@ func checkScenarioStates(features []*scenario.Feature, diagrams []*statemachine.
 				currentState[d.ID] = d.InitialState
 			}
 
-			for _, step := range steps {
+			for i, step := range steps {
 				if !step.IsAction {
 					continue
 				}
+
+				// Skip state transition check if the next assertion expects a 4xx status
+				// (intentional rejection test, e.g. @invariant scenarios).
+				if expectsClientError(steps, i) {
+					continue
+				}
+
 				ds, ok := eventDiagrams[step.OperationID]
 				if !ok {
 					continue
@@ -235,4 +242,19 @@ func checkScenarioStates(features []*scenario.Feature, diagrams []*statemachine.
 	}
 
 	return errs
+}
+
+// expectsClientError checks if the steps following index i contain a status == 4xx
+// assertion before the next action step. This indicates an intentional rejection test.
+func expectsClientError(steps []scenario.Step, i int) bool {
+	for j := i + 1; j < len(steps); j++ {
+		s := steps[j]
+		if s.IsAction {
+			return false // next action reached without 4xx assertion
+		}
+		if s.Assertion.Kind == "status" && len(s.Assertion.Value) == 3 && s.Assertion.Value[0] == '4' {
+			return true
+		}
+	}
+	return false
 }

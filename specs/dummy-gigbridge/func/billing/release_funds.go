@@ -1,5 +1,7 @@
 package billing
 
+import "fmt"
+
 // @func releaseFunds
 // @description Release funds to freelancer with 10 percent platform fee deduction
 
@@ -14,6 +16,10 @@ type ReleaseFundsResponse struct {
 }
 
 func ReleaseFunds(req ReleaseFundsRequest) (ReleaseFundsResponse, error) {
-	// TODO: implement
-	return ReleaseFundsResponse{}, nil
+	if req.Amount <= 0 {
+		return ReleaseFundsResponse{}, fmt.Errorf("amount must be positive")
+	}
+	return ReleaseFundsResponse{
+		TransactionID: req.GigID*1000 + req.FreelancerID,
+	}, nil
 }
