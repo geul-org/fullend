@@ -1,4 +1,4 @@
-# Phase 025: Queue Pub/Sub — `pkg/queue` + fullend.yaml 파싱 + gluegen + crosscheck
+# ✅ Phase 025: Queue Pub/Sub — `pkg/queue` + fullend.yaml 파싱 + gluegen + crosscheck
 
 ## 목표
 
