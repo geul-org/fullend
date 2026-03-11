@@ -533,3 +533,27 @@ response.array count > N
 | `@subscribe` message fields → `@publish` payload fields | WARNING |
 | `@publish`/`@subscribe` used → `queue.backend` required | ERROR |
 | `@auth` inputs → authz CheckRequest fields | ERROR |
+| FK + `DEFAULT 0` → 대상 테이블에 id=0 센티널 필요 | WARNING |
+
+## DDL 작성 가이드
+
+### FK DEFAULT 0 패턴 (센티널 레코드)
+
+nullable FK를 피하고 `NOT NULL DEFAULT 0`을 사용할 경우, 참조 대상 테이블에 **id=0 센티널 레코드**를 반드시 삽입해야 한다. 그렇지 않으면 FK 제약 위반으로 INSERT가 실패한다.
+
+```sql
+-- gigs.freelancer_id: 생성 시점에 미배정 → DEFAULT 0
+freelancer_id BIGINT NOT NULL DEFAULT 0 REFERENCES users(id)
+```
+
+이 패턴을 쓸 때 참조 대상 DDL에 센티널을 추가한다:
+
+```sql
+-- users.sql 끝에 추가
+INSERT INTO users (id, email, password_hash, role, name)
+VALUES (0, 'nobody@system', '', 'system', 'Nobody')
+ON CONFLICT DO NOTHING;
+```
+
+**장점:** Go struct가 `int64` 유지, `*int64`/`sql.NullInt64` 불필요, nil 체크 코드 없음.
+**주의:** 센티널 레코드 누락 시 FK 위반 에러 발생. fullend validate가 이 패턴을 감지하여 WARNING을 표시한다.

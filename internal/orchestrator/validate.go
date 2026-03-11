@@ -635,6 +635,7 @@ func validateConfig(path string) (reporter.StepResult, *projectconfig.ProjectCon
 
 // checkDDLNullableColumns scans DDL files for columns missing NOT NULL.
 // PRIMARY KEY columns are implicitly NOT NULL and are excluded.
+// Also checks FK + DEFAULT 0 columns for sentinel record (id=0) in referenced table.
 func checkDDLNullableColumns(root string) []string {
 	dbDir := filepath.Join(root, "db")
 	entries, err := os.ReadDir(dbDir)
@@ -644,8 +645,15 @@ func checkDDLNullableColumns(root string) []string {
 
 	createRe := regexp.MustCompile(`(?i)CREATE\s+TABLE\s+(\w+)`)
 	colRe := regexp.MustCompile(`^(\w+)\s+\w+`)
+	refRe := regexp.MustCompile(`(?i)REFERENCES\s+(\w+)`)
 
-	var errs []string
+	// 1단계: 모든 DDL 파일 내용을 테이블별로 수집.
+	tableContents := make(map[string]string) // tableName → 파일 전체 내용
+	type fileInfo struct {
+		tableName string
+		content   string
+	}
+	var files []fileInfo
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
 			continue
@@ -660,15 +668,23 @@ func checkDDLNullableColumns(root string) []string {
 			continue
 		}
 		tableName := tableMatch[1]
+		tableContents[tableName] = content
+		files = append(files, fileInfo{tableName: tableName, content: content})
+	}
 
-		for _, line := range strings.Split(content, "\n") {
+	// 2단계: 컬럼별 NOT NULL 체크 + FK DEFAULT 0 센티널 체크.
+	var errs []string
+	for _, f := range files {
+		for _, line := range strings.Split(f.content, "\n") {
 			trimmed := strings.TrimSpace(line)
-			// Skip non-column lines.
 			if trimmed == "" || strings.HasPrefix(trimmed, "--") || strings.HasPrefix(strings.ToUpper(trimmed), "CREATE") || strings.HasPrefix(trimmed, ")") {
 				continue
 			}
-			// Skip constraints (PRIMARY KEY, UNIQUE, CHECK, FOREIGN KEY, CONSTRAINT).
 			upper := strings.ToUpper(trimmed)
+			// Skip non-DDL statements (INSERT, ON, etc.).
+			if strings.HasPrefix(upper, "INSERT") || strings.HasPrefix(upper, "ON ") || strings.HasPrefix(upper, "VALUES") {
+				continue
+			}
 			if strings.HasPrefix(upper, "PRIMARY KEY") || strings.HasPrefix(upper, "UNIQUE") || strings.HasPrefix(upper, "CHECK") || strings.HasPrefix(upper, "FOREIGN KEY") || strings.HasPrefix(upper, "CONSTRAINT") {
 				continue
 			}
@@ -678,12 +694,41 @@ func checkDDLNullableColumns(root string) []string {
 			}
 			colName := m[1]
 			if strings.Contains(upper, "PRIMARY KEY") || strings.Contains(upper, "NOT NULL") {
+				// FK + DEFAULT 0 패턴: 참조 대상 테이블에 id=0 센티널 레코드 확인.
+				if strings.Contains(upper, "DEFAULT 0") && strings.Contains(upper, "REFERENCES") {
+					refMatch := refRe.FindStringSubmatch(trimmed)
+					if refMatch != nil {
+						refTable := refMatch[1]
+						if refContent, ok := tableContents[refTable]; ok {
+							if !hasSentinelInsert(refContent, refTable) {
+								errs = append(errs, fmt.Sprintf("DDL: 테이블 %q 컬럼 %q — FK + DEFAULT 0이지만 참조 대상 %q에 id=0 센티널 레코드가 없습니다. INSERT INTO %s (id, ...) VALUES (0, ...) ON CONFLICT DO NOTHING; 을 추가하세요", f.tableName, colName, refTable, refTable))
+							}
+						}
+					}
+				}
 				continue
 			}
-			errs = append(errs, fmt.Sprintf("DDL: 테이블 %q 컬럼 %q — NOT NULL이 없습니다. NOT NULL DEFAULT 값을 지정하세요", tableName, colName))
+			errs = append(errs, fmt.Sprintf("DDL: 테이블 %q 컬럼 %q — NOT NULL이 없습니다. NOT NULL DEFAULT 값을 지정하세요", f.tableName, colName))
 		}
 	}
 	return errs
+}
+
+// hasSentinelInsert checks if the DDL content contains an INSERT with id=0 for the given table.
+func hasSentinelInsert(content, tableName string) bool {
+	upper := strings.ToUpper(content)
+	// INSERT INTO <table> ... VALUES (0, ...)
+	insertRe := regexp.MustCompile(`(?i)INSERT\s+INTO\s+` + tableName + `\b`)
+	if !insertRe.MatchString(content) {
+		return false
+	}
+	// VALUES 절에서 첫 번째 값이 0인지 확인.
+	valuesRe := regexp.MustCompile(`(?i)VALUES\s*\(\s*0\s*,`)
+	idx := insertRe.FindStringIndex(upper)
+	if idx == nil {
+		return false
+	}
+	return valuesRe.MatchString(content[idx[0]:])
 }
 
 // checkPathParamConflicts detects path param name conflicts at the same segment position.
