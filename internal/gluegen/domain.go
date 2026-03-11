@@ -338,7 +338,7 @@ func generateCentralServer(serviceDir string, domains []string, serviceFuncs []s
 }
 
 // generateMainWithDomains creates cmd/main.go with domain handler initialization.
-func generateMainWithDomains(artifactsDir string, serviceFuncs []ssacparser.ServiceFunc, modulePath string) error {
+func generateMainWithDomains(artifactsDir string, serviceFuncs []ssacparser.ServiceFunc, modulePath string, queueBackend string) error {
 	if modulePath == "" {
 		base := filepath.Base(artifactsDir)
 		modulePath = base + "/backend"
@@ -425,6 +425,46 @@ func generateMainWithDomains(artifactsDir string, serviceFuncs []ssacparser.Serv
 `
 	}
 
+	// Queue code blocks.
+	queueImport := ""
+	queueInitBlock := ""
+	queueSubscribeBlock := ""
+	if queueBackend != "" {
+		subscribers := collectSubscribers(serviceFuncs)
+		if len(subscribers) > 0 || hasPublishSequence(serviceFuncs) {
+			queueImport = "\n\t\"context\"\n\t\"encoding/json\"\n\t\"github.com/geul-org/fullend/pkg/queue\"\n\t\"fmt\""
+			queueInitBlock = fmt.Sprintf(`
+	if err := queue.Init(context.Background(), %q, conn); err != nil {
+		log.Fatalf("queue init failed: %%v", err)
+	}
+	defer queue.Close()
+`, queueBackend)
+
+			var subLines []string
+			for _, fn := range subscribers {
+				if fn.Param == nil {
+					continue
+				}
+				// Determine the service package for this subscriber.
+				svcPkg := "service"
+				if fn.Domain != "" {
+					svcPkg = fn.Domain + "svc"
+				}
+				subLines = append(subLines, fmt.Sprintf(`
+	queue.Subscribe(%q, func(ctx context.Context, msg []byte) error {
+		var message %s.%s
+		if err := json.Unmarshal(msg, &message); err != nil {
+			return fmt.Errorf("unmarshal: %%w", err)
+		}
+		return server.%s.%s(ctx, message)
+	})`, fn.Subscribe.Topic, svcPkg, fn.Param.TypeName, ucFirst(fn.Domain), fn.Name))
+			}
+			if len(subLines) > 0 {
+				queueSubscribeBlock = strings.Join(subLines, "\n") + "\n\n\tgo queue.Start(context.Background())\n"
+			}
+		}
+	}
+
 	src := fmt.Sprintf(`package main
 
 import (
@@ -433,7 +473,7 @@ import (
 	"log"
 
 	_ "github.com/lib/pq"
-%s
+%s%s
 )
 
 func main() {
@@ -451,16 +491,16 @@ func main() {
 	if err := conn.Ping(); err != nil {
 		log.Fatalf("database ping failed: %%v", err)
 	}
-%s
+%s%s
 	server := &service.Server{
 %s
 	}
-
+%s
 	r := service.SetupRouter(server)
 	log.Printf("server listening on %%s", *addr)
 	log.Fatal(r.Run(*addr))
 }
-`, importBlock, authzBlock, initBlock)
+`, importBlock, queueImport, authzBlock, queueInitBlock, initBlock, queueSubscribeBlock)
 
 	path := filepath.Join(artifactsDir, "backend", "cmd", "main.go")
 	return os.WriteFile(path, []byte(src), 0644)

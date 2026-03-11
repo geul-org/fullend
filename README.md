@@ -130,6 +130,7 @@ Package-prefix @model interfaces for non-DDL I/O. Configured via `fullend.yaml`.
 | `session` | `SessionModel` (Set/Get/Delete + TTL) | PostgreSQL, Memory | `session.Session.Get({key: ...})` |
 | `cache` | `CacheModel` (Set/Get/Delete + TTL) | PostgreSQL, Memory | `cache.Cache.Set({key: ..., value: ..., ttl: ...})` |
 | `file` | `FileModel` (Upload/Download/Delete) | S3, LocalFile | `file.File.Upload({key: ..., body: ...})` |
+| `queue` | Singleton Pub/Sub (Publish/Subscribe) | PostgreSQL, Memory | `@publish "topic" {payload}` |
 
 ## Middleware (Generated)
 
@@ -160,6 +161,7 @@ Individual tools (SSaC, STML) validate within their own layer. fullend catches m
 - **Policy ↔ States** — state transition events with @auth have matching Rego rules
 - **Scenario ↔ OpenAPI** — operationIds, methods, and request fields match
 - **Scenario ↔ States** — step order follows state transition rules
+- **Queue** — @publish topics match @subscribe functions, payload/message field consistency, queue config required
 - **Func ↔ SSaC** — @call references have matching implementations, arg count matches Request fields, positional types match (via DDL/OpenAPI), result/response consistency
 - **STML ↔ SSaC** (indirect) — both reference the same OpenAPI operationIds
 

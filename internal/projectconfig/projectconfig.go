@@ -19,6 +19,7 @@ type ProjectConfig struct {
 	Session    *BuiltinBackend `yaml:"session"`
 	Cache      *BuiltinBackend `yaml:"cache"`
 	File       *FileBackend    `yaml:"file"`
+	Queue      *QueueBackend   `yaml:"queue"`
 }
 
 type Metadata struct {
@@ -52,6 +53,11 @@ type Deploy struct {
 
 // BuiltinBackend configures session/cache backend (postgres | memory).
 type BuiltinBackend struct {
+	Backend string `yaml:"backend"` // "postgres" or "memory"
+}
+
+// QueueBackend configures queue backend (postgres | memory).
+type QueueBackend struct {
 	Backend string `yaml:"backend"` // "postgres" or "memory"
 }
 

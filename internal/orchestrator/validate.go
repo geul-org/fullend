@@ -176,6 +176,11 @@ func runCrossValidate(root string, doc *openapi3.T, st *ssacvalidator.SymbolTabl
 	// Parse @archived tags from DDL files.
 	archived, _ := crosscheck.ParseArchived(filepath.Join(root, "db"))
 
+	var queueBackend string
+	if projConfig != nil && projConfig.Queue != nil {
+		queueBackend = projConfig.Queue.Backend
+	}
+
 	input := &crosscheck.CrossValidateInput{
 		OpenAPIDoc:       doc,
 		SymbolTable:      st,
@@ -189,6 +194,7 @@ func runCrossValidate(root string, doc *openapi3.T, st *ssacvalidator.SymbolTabl
 		Middleware:       middleware,
 		Archived:         archived,
 		Claims:           claims,
+		QueueBackend:     queueBackend,
 	}
 
 	cerrs := crosscheck.Run(input)

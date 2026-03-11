@@ -15,7 +15,7 @@ Create 10 SSOTs in `specs/<project>/`:
 | 2 | SQL DDL | `db/*.sql` | Tables, FK, indexes |
 | 3 | sqlc queries | `db/queries/*.sql` | `-- name: Method :cardinality` |
 | 4 | OpenAPI | `api/openapi.yaml` | operationId, x- extensions, securitySchemes |
-| 5 | SSaC | `service/**/*.ssac` | 10 sequence types, operationId match, .ssac extension |
+| 5 | SSaC | `service/**/*.ssac` | 11 sequence types + @subscribe trigger, operationId match, .ssac extension |
 | 6 | Model | `model/*.go` | @dto types (CurrentUser is auto-generated) |
 | 7 | Mermaid stateDiagram | `states/*.md` | State transitions, event = operationId |
 | 8 | OPA Rego | `policy/*.rego` | @ownership, allow rules |

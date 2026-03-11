@@ -25,6 +25,7 @@ type CrossValidateInput struct {
 	Middleware       []string          // from fullend.yaml backend.middleware
 	Archived         *ArchivedInfo     // @archived tables/columns from DDL
 	Claims           map[string]string // from fullend.yaml backend.auth.claims (FieldName → claim key)
+	QueueBackend     string            // from fullend.yaml queue.backend ("postgres", "memory", "")
 }
 
 // Run executes all cross-validation rules and returns collected errors.
@@ -79,6 +80,11 @@ func Run(input *CrossValidateInput) []CrossError {
 	// DDL → SSaC/OpenAPI coverage
 	if input.SymbolTable != nil && input.ServiceFuncs != nil {
 		errs = append(errs, CheckDDLCoverage(input.SymbolTable, input.ServiceFuncs, input.OpenAPIDoc, input.Archived)...)
+	}
+
+	// Queue: publish ↔ subscribe
+	if input.ServiceFuncs != nil {
+		errs = append(errs, CheckQueue(input.ServiceFuncs, input.QueueBackend)...)
 	}
 
 	return errs

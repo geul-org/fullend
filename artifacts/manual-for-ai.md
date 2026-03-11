@@ -70,6 +70,9 @@ file:
     region: ap-northeast-2
   local:
     root: ./uploads
+
+queue:
+  backend: postgres                  # postgres | memory
 ```
 
 ### Required Fields
@@ -84,6 +87,7 @@ file:
 | `session.backend` | Session backend: `postgres` or `memory` |
 | `cache.backend` | Cache backend: `postgres` or `memory` |
 | `file.backend` | File storage: `s3` or `local` |
+| `queue.backend` | Queue backend: `postgres` or `memory` |
 
 ## SSaC — Service Logic Declarations
 
@@ -261,6 +265,42 @@ type FileModel interface {
 }
 ```
 Backends: S3 (`NewS3File`), LocalFile (`NewLocalFile`)
+
+#### queue — Queue Pub/Sub
+
+Singleton package-level API (not a model interface). Configured via `fullend.yaml` `queue.backend`.
+
+```go
+func Init(ctx context.Context, backend string, db *sql.DB) error
+func Publish(ctx context.Context, topic string, payload any, opts ...PublishOption) error
+func Subscribe(topic string, handler func(ctx context.Context, msg []byte) error)
+func Start(ctx context.Context) error
+func Close() error
+
+func WithDelay(seconds int) PublishOption
+func WithPriority(p string) PublishOption
+```
+
+Backends: PostgreSQL (`fullend_queue` table, polling), Memory (synchronous, test only)
+
+SSaC usage:
+```go
+// @publish "order.completed" {OrderID: order.ID, Email: order.Email}
+// @publish "cart.abandoned" {CartID: cart.ID} {delay: 1800}
+```
+
+Subscribe functions use `@subscribe` trigger with message struct:
+```go
+type OnOrderCompletedMessage struct {
+    OrderID int64
+    Email   string
+}
+
+// @subscribe "order.completed"
+// @get Order order = Order.FindByID({ID: message.OrderID})
+// @call mail.SendEmail({To: message.Email, Subject: "주문 완료"})
+func OnOrderCompleted(message OnOrderCompletedMessage) {}
+```
 
 ## Middleware — BearerAuth
 
@@ -443,3 +483,7 @@ response.array count > N
 | Func arg type ↔ Request field type | ERROR |
 | DDL table → SSaC reference | ERROR |
 | DDL column → OpenAPI schema | WARNING |
+| `@publish` topic → `@subscribe` exists | WARNING |
+| `@subscribe` topic → `@publish` exists | WARNING |
+| `@subscribe` message fields → `@publish` payload fields | WARNING |
+| `@publish`/`@subscribe` used → `queue.backend` required | ERROR |
