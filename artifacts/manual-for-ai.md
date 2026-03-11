@@ -609,7 +609,7 @@ Omitting `input.resource` causes the crosscheck to determine there is no matchin
 
 ```rego
 # Correct — both action and resource specified
-allow {
+allow if {
     input.action == "PublishCourse"
     input.resource == "course"
     input.claims.role == "instructor"
@@ -617,7 +617,7 @@ allow {
 }
 
 # Wrong — input.resource missing → crosscheck ERROR
-allow {
+allow if {
     input.action == "PublishCourse"
     input.claims.role == "instructor"
     data.owners.course[input.resource_id] == input.claims.user_id
