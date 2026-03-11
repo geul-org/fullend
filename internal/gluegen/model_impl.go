@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 
 	ssacparser "github.com/geul-org/ssac/parser"
@@ -709,9 +711,27 @@ func finishQuery(q *sqlcQuery, sql string, paramRe, insertColRe, updateSetRe *re
 		}
 	}
 
-	// NOTE: UPDATE SET columns are NOT extracted for reordering.
-	// UPDATE queries use explicit $N placeholders that match the interface param order.
-	// Reordering is only needed for INSERT (column order in VALUES matches $N order).
+	// For UPDATE: extract all column = $N patterns, ordered by $N position.
+	// This maps interface params to the correct $N placeholder positions.
+	if len(q.Columns) == 0 && strings.HasPrefix(strings.TrimSpace(strings.ToUpper(sql)), "UPDATE") {
+		updateColNRe := regexp.MustCompile(`(\w+)\s*=\s*\$(\d+)`)
+		colMatches := updateColNRe.FindAllStringSubmatch(sql, -1)
+		if len(colMatches) > 0 {
+			type colPos struct {
+				col string
+				pos int
+			}
+			var positions []colPos
+			for _, m := range colMatches {
+				pos, _ := strconv.Atoi(m[2])
+				positions = append(positions, colPos{col: m[1], pos: pos})
+			}
+			sort.Slice(positions, func(i, j int) bool { return positions[i].pos < positions[j].pos })
+			for _, cp := range positions {
+				q.Columns = append(q.Columns, cp.col)
+			}
+		}
+	}
 }
 
 // singularize converts a plural table name to a singular model name.

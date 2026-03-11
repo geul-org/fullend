@@ -178,8 +178,18 @@ func writeActionHurlV2(buf *strings.Builder, step scenario.Step, statusCode stri
 		captures[step.Capture] = true
 		if step.Capture == "token" {
 			*hasToken = true
+			tokenField := "token"
+			if respSchema := getResponseSchema(info.Op); respSchema != nil && respSchema.Properties != nil {
+				for name := range respSchema.Properties {
+					lname := strings.ToLower(name)
+					if strings.Contains(lname, "token") || strings.Contains(lname, "accesstoken") {
+						tokenField = name
+						break
+					}
+				}
+			}
 			buf.WriteString("[Captures]\n")
-			buf.WriteString("token: jsonpath \"$.token\"\n")
+			buf.WriteString(fmt.Sprintf("token: jsonpath \"$.%s\"\n", tokenField))
 		} else {
 			// Infer capture from response schema — skip if response is an array.
 			captureVar, jsonPath := inferScenarioCapture(step.Capture, info.Op)

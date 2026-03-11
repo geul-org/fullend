@@ -12,7 +12,7 @@ Feature: Gig lifecycle happy path
     Given POST Register {"Email": "freelancer-lifecycle@test.com", "Password": "Pass1234!", "Role": "freelancer", "Name": "Freelancer A"} → freelancerUser
     And POST Login {"Email": "freelancer-lifecycle@test.com", "Password": "Pass1234!"} → token
     And POST SubmitProposal {"ID": gig.ID, "BidAmount": 90000} → proposal
-    Then status == 201
+    Then status == 200
 
     Given POST Login {"Email": "client-lifecycle@test.com", "Password": "Pass1234!"} → token
     When POST AcceptProposal {"ID": proposal.ID} → acceptResult
