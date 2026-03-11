@@ -86,7 +86,7 @@ components:
         GigID:
           type: integer
           format: int64
-        Type:
+        TxType:
           type: string
         Amount:
           type: integer
