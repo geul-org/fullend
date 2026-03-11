@@ -46,8 +46,8 @@ func CheckPolicy(policies []*policy.Policy, funcs []ssacparser.ServiceFunc, st *
 			errs = append(errs, CrossError{
 				Rule:       "Policy ↔ SSaC",
 				Context:    fmt.Sprintf("action=%s resource=%s", pair[0], pair[1]),
-				Message:    fmt.Sprintf("SSaC authorize (%s, %s) has no matching Rego allow rule", pair[0], pair[1]),
-				Level:      "WARNING",
+				Message:    fmt.Sprintf("SSaC authorize (%s, %s) has no matching Rego allow rule — 런타임에 모든 요청 거부됨", pair[0], pair[1]),
+				Level:      "ERROR",
 				Suggestion: fmt.Sprintf("Add allow rule for action=%q resource=%q in policy/*.rego", pair[0], pair[1]),
 			})
 		}
@@ -59,8 +59,8 @@ func CheckPolicy(policies []*policy.Policy, funcs []ssacparser.ServiceFunc, st *
 			errs = append(errs, CrossError{
 				Rule:       "Policy ↔ SSaC",
 				Context:    fmt.Sprintf("action=%s resource=%s", pair[0], pair[1]),
-				Message:    fmt.Sprintf("Rego allow rule (%s, %s) has no matching SSaC authorize sequence", pair[0], pair[1]),
-				Level:      "WARNING",
+				Message:    fmt.Sprintf("Rego allow rule (%s, %s) has no matching SSaC authorize sequence — 미사용 정책 룰", pair[0], pair[1]),
+				Level:      "ERROR",
 				Suggestion: fmt.Sprintf("Add @auth \"%s\" \"%s\" sequence to SSaC", pair[0], pair[1]),
 			})
 		}
