@@ -13,11 +13,12 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.96.4
 	github.com/disintegration/imaging v1.6.2
 	github.com/getkin/kin-openapi v0.133.0
-	github.com/geul-org/ssac v0.0.0-00010101000000-000000000000
+	github.com/geul-org/ssac v0.0.0-20260311111023-9bca86a71b77
 	github.com/geul-org/stml v0.0.0-00010101000000-000000000000
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/gosimple/slug v1.15.0
 	github.com/microcosm-cc/bluemonday v1.0.27
+	github.com/open-policy-agent/opa v1.14.1
 	github.com/pquerna/otp v1.5.0
 	golang.org/x/crypto v0.48.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -64,12 +65,10 @@ require (
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
 	github.com/oasdiff/yaml v0.0.0-20250309154309-f31be36b4037 // indirect
 	github.com/oasdiff/yaml3 v0.0.0-20250309153720-d2182401db90 // indirect
-	github.com/open-policy-agent/opa v1.14.1 // indirect
 	github.com/perimeterx/marshmallow v1.1.5 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20250401214520-65e299d6c5c9 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
-	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/tchap/go-patricia/v2 v2.3.3 // indirect
 	github.com/ugorji/go/codec v1.3.1 // indirect
 	github.com/valyala/fastjson v1.6.7 // indirect

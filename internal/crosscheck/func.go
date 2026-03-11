@@ -162,7 +162,7 @@ func CheckFuncs(
 			for _, value := range seq.Inputs {
 				parts := strings.SplitN(value, ".", 2)
 				source := parts[0]
-				if source == "request" || source == "currentUser" || source == "config" {
+				if source == "request" || source == "currentUser" {
 					continue
 				}
 				// Check if it's a literal (quoted string).
@@ -197,11 +197,6 @@ func resolveInputValueType(value string, definedVars map[string]string, st *ssac
 		return ""
 	}
 	source, field := parts[0], parts[1]
-
-	// Skip config (type unknown).
-	if source == "config" {
-		return ""
-	}
 
 	// request.Field → OpenAPI.
 	if source == "request" {
@@ -374,7 +369,6 @@ var forbiddenImportPrefixes = []string{
 	"net/rpc",
 	"google.golang.org/grpc",
 	// File I/O
-	"os",
 	"io",
 	"io/ioutil",
 	"bufio",

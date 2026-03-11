@@ -11,7 +11,7 @@ import "github.com/geul-org/fullend/pkg/mail"
 // @call billing.ReleaseFundsResponse release = billing.ReleaseFunds({GigID: gig.ID, Amount: gig.Budget, FreelancerID: gig.FreelancerID})
 // @post Transaction tx = Transaction.Create({GigID: gig.ID, TxType: "release", Amount: gig.Budget})
 // @get User freelancerUser = User.FindByID({ID: gig.FreelancerID})
-// @call mail.SendTemplateEmail({Host: config.SMTPHost, Port: config.SMTPPort, Username: config.SMTPUsername, Password: config.SMTPPassword, From: config.SMTPFrom, To: freelancerUser.Email, Subject: "Work Approved", TemplateName: "work_approved", Data: config.EmptyMap})
+// @call mail.SendTemplateEmail({To: freelancerUser.Email, Subject: "Work Approved", TemplateName: "work_approved"})
 // @get Gig updatedGig = Gig.FindByID({ID: gig.ID})
 // @response { gig: updatedGig }
 func ApproveWork() {}
