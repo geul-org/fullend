@@ -1,7 +1,7 @@
 # fullend — AI SSOT Integration Guide
 
-> Covers SSaC, STML, Func Spec, Mermaid stateDiagram, OPA Rego, Gherkin, OpenAPI x- extensions, cross-validation rules, and pkg/ functions/models.
-> Does NOT explain OpenAPI/SQL DDL/Terraform syntax.
+> SSaC, STML, Func Spec, Mermaid stateDiagram, OPA Rego, Gherkin, OpenAPI x- 확장, 교차 검증 규칙, pkg/ 함수·모델 전체 문법 참조.
+> OpenAPI/SQL DDL/Terraform 문법은 설명하지 않음.
 
 ## Project Directory Structure
 
@@ -80,7 +80,7 @@ file:
 
 | Field | Description |
 |---|---|
-| `backend.auth.claims` | JWT claims → generates `CurrentUser` struct |
+| `backend.auth.claims` | JWT claims → `CurrentUser` struct 생성 |
 | `session.backend` | Session backend: `postgres` or `memory` |
 | `cache.backend` | Cache backend: `postgres` or `memory` |
 | `file.backend` | File storage: `s3` or `local` |
@@ -89,7 +89,7 @@ file:
 
 ### File Extension: `.ssac`
 
-Uses Go syntax but excluded from Go build via `.ssac` extension.
+Go 문법 그대로 사용하되, `.ssac` 확장자로 Go 빌드 대상에서 제외.
 
 ```go
 package service
@@ -106,10 +106,10 @@ func Register() {}
 
 | Type | Purpose | Format | Args |
 |---|---|---|---|
-| `@get` | Query | `Type var = Model.Method(args...)` | 0 args allowed |
-| `@post` | Create | `Type var = Model.Method(args...)` | Required |
-| `@put` | Update | `Model.Method(args...)` | Required |
-| `@delete` | Delete | `Model.Method(args...)` | 0 args = WARNING |
+| `@get` | Query | `Type var = Model.Method(args...)` | 0개 허용 |
+| `@post` | Create | `Type var = Model.Method(args...)` | 필수 |
+| `@put` | Update | `Model.Method(args...)` | 필수 |
+| `@delete` | Delete | `Model.Method(args...)` | 0개 시 WARNING |
 | `@empty` | Guard: nil/zero → 404 | `target "message"` | — |
 | `@exists` | Guard: not nil → 409 | `target "message"` | — |
 | `@state` | State transition | `diagramID {inputs} "transition" "message"` | — |
@@ -117,7 +117,7 @@ func Register() {}
 | `@call` | Function call | `[Type var =] package.Func(args...)` | — |
 | `@response` | JSON response | `varName` or `{ field: var, ... }` | — |
 
-Append `!` to suppress WARNINGs: `@delete!`, `@response!`
+`!` 접미사로 WARNING 억제: `@delete!`, `@response!`
 
 ### Args Format
 
@@ -134,30 +134,30 @@ Reserved sources: `request`, `currentUser`, `config`, `query`
 // @get []Lesson lessons = Lesson.ListByCourse(request.CourseID)  — no pagination
 ```
 
-`{Query: query}` adds `opts QueryOpts` parameter to model method. Use only with `x-pagination`.
+`{Query: query}` → model method에 `opts QueryOpts` 파라미터 추가. `x-pagination` 있을 때만 사용.
 
 | x-pagination | @get type | Model return |
 |---|---|---|
 | `offset` | `Page[T]` | `(*pagination.Page[T], error)` |
 | `cursor` | `Cursor[T]` | `(*pagination.Cursor[T], error)` |
-| none | `[]T` or `T` | `([]T, error)` or `(*T, error)` |
+| 없음 | `[]T` or `T` | `([]T, error)` or `(*T, error)` |
 
 ### Package-Prefix @model (Non-DDL Models)
 
 ```go
-// DDL model (no prefix) — DDL table is SSOT
+// DDL 모델 (접두사 없음) — DDL 테이블이 SSOT
 // @get User user = User.FindByID({ID: request.ID})
 
-// Package model (with prefix) — Go interface is SSOT
+// 패키지 모델 (접두사 있음) — Go interface가 SSOT
 // @get Session s = session.Session.Get({key: request.Token})
 // @post CacheResult r = cache.Cache.Set({key: k, value: v, ttl: 300})
 // @post FileResult r = file.File.Upload({key: path, body: request.File})
 ```
 
-- No prefix → DDL table validation
-- With prefix → Go interface parsing → method/parameter validation
-- `context.Context` parameter is framework-provided, omit from SSaC
-- SSaC parameter names must exactly match Go interface parameter names
+- 접두사 없음 → DDL 테이블 검증
+- 접두사 있음 → Go interface 파싱 → 메서드/파라미터 검증
+- `context.Context` 파라미터는 프레임워크 제공, SSaC에서 명시 불필요
+- SSaC 파라미터명 = Go interface 파라미터명 (정확히 일치)
 
 ### Function Name = operationId
 
@@ -169,11 +169,11 @@ STML:    data-action="EnrollCourse"
 
 ## Func Spec
 
-`func/<pkg>/*.go`. Fixed signature: `func FuncName(req FuncNameRequest) (FuncNameResponse, error)`
+`func/<pkg>/*.go`. 고정 시그니처: `func FuncName(req FuncNameRequest) (FuncNameResponse, error)`
 
-### Purity Rule (No I/O)
+### Purity Rule (I/O 금지)
 
-`@call func` allows only pure logic. Forbidden imports: `database/sql`, `net/http`, `os`, `io`, `bufio`, etc. Use `@model` for I/O.
+`@call func`은 순수 로직만 허용. 금지 import: `database/sql`, `net/http`, `os`, `io`, `bufio` 등. I/O 필요 시 `@model` 사용.
 
 ### Fallback Chain
 
@@ -187,12 +187,12 @@ STML:    data-action="EnrollCourse"
 
 | Function | Description |
 |---|---|
-| `hashPassword` | bcrypt hashing |
-| `verifyPassword` | bcrypt verification (error = mismatch) |
-| `issueToken` | JWT access token (24h) |
-| `verifyToken` | JWT verification → claims |
-| `refreshToken` | Refresh token (7 days) |
-| `generateResetToken` | Random hex token for password reset |
+| `hashPassword` | bcrypt 해싱 |
+| `verifyPassword` | bcrypt 검증 (error=불일치) |
+| `issueToken` | JWT 액세스 토큰 (24h) |
+| `verifyToken` | JWT 검증 → claims |
+| `refreshToken` | 리프레시 토큰 (7일) |
+| `generateResetToken` | 비밀번호 리셋 랜덤 토큰 |
 
 #### crypto
 
@@ -205,37 +205,37 @@ STML:    data-action="EnrollCourse"
 
 | Function | Description |
 |---|---|
-| `uploadFile` | S3-compatible upload |
-| `deleteFile` | S3-compatible deletion |
-| `presignURL` | Presigned download URL |
+| `uploadFile` | S3 호환 업로드 |
+| `deleteFile` | S3 호환 삭제 |
+| `presignURL` | 서명된 다운로드 URL |
 
 #### mail
 
 | Function | Description |
 |---|---|
-| `sendEmail` | SMTP plain text |
-| `sendTemplateEmail` | Go template HTML |
+| `sendEmail` | SMTP 평문 |
+| `sendTemplateEmail` | Go 템플릿 HTML |
 
 #### text
 
 | Function | Description |
 |---|---|
 | `generateSlug` | URL-safe slug |
-| `sanitizeHTML` | XSS prevention |
-| `truncateText` | Unicode-safe truncation |
+| `sanitizeHTML` | XSS 방지 |
+| `truncateText` | 유니코드 안전 자르기 |
 
 #### image
 
 | Function | Description |
 |---|---|
-| `ogImage` | OG image (1200x630) |
-| `thumbnail` | Thumbnail (200x200) |
+| `ogImage` | OG 이미지 (1200x630) |
+| `thumbnail` | 썸네일 (200x200) |
 
 ## Built-in Models (pkg/)
 
-Used as package-prefix @model. Backend configured in `fullend.yaml`.
+패키지 접두사 @model로 사용. `fullend.yaml`에서 backend 설정.
 
-#### session — Session (key-value + TTL)
+#### session — 세션 (key-value + TTL)
 
 ```go
 type SessionModel interface {
@@ -244,14 +244,14 @@ type SessionModel interface {
     Delete(ctx context.Context, key string) error
 }
 ```
-Backends: PostgreSQL (`NewPostgresSession`), Memory (`NewMemorySession`)
+구현체: PostgreSQL (`NewPostgresSession`), Memory (`NewMemorySession`)
 
-#### cache — Cache (key-value + TTL)
+#### cache — 캐시 (key-value + TTL)
 
-Same interface as SessionModel. Different purpose (data efficiency).
-Backends: PostgreSQL (`NewPostgresCache`), Memory (`NewMemoryCache`)
+SessionModel과 동일 interface. 목적만 다름 (데이터 효율화).
+구현체: PostgreSQL (`NewPostgresCache`), Memory (`NewMemoryCache`)
 
-#### file — File Storage
+#### file — 파일 스토리지
 
 ```go
 type FileModel interface {
@@ -260,15 +260,15 @@ type FileModel interface {
     Delete(ctx context.Context, key string) error
 }
 ```
-Backends: S3 (`NewS3File`), LocalFile (`NewLocalFile`)
+구현체: S3 (`NewS3File`), LocalFile (`NewLocalFile`)
 
 ## Middleware — BearerAuth
 
-Auto-generated when `backend.middleware` has `bearerAuth` + OpenAPI `securitySchemes` has `bearerAuth`.
+`fullend.yaml` `backend.middleware`에 `bearerAuth` + OpenAPI `securitySchemes`에 `bearerAuth` 존재 시 gluegen이 `internal/middleware/bearerauth.go` 자동 생성.
 
-- `Authorization: Bearer <token>` → `pkg/auth.VerifyToken` → sets `*model.CurrentUser` in gin context
-- Missing/invalid token → sets empty `CurrentUser{}`. `@auth` handles permission checks.
-- `CurrentUser` struct auto-generated from `backend.auth.claims` (`*_id` → `int64`, else → `string`)
+- `Authorization: Bearer <token>` → `pkg/auth.VerifyToken` → `c.Set("currentUser", &model.CurrentUser{...})`
+- 토큰 없거나 무효하면 빈 `CurrentUser{}` 세팅. `@auth`가 권한 검사 담당.
+- `CurrentUser` struct는 `backend.auth.claims`에서 자동 생성 (`*_id` → `int64`, 나머지 → `string`)
 
 ## STML — UI Declarations
 
@@ -299,7 +299,7 @@ Auto-generated when `backend.middleware` has `bearerAuth` + OpenAPI `securitySch
 
 ### custom.ts
 
-When `data-bind` references a field not in the OpenAPI response schema, exporting a function with the same name in `<page>.custom.ts` passes validation.
+`data-bind`가 OpenAPI response schema에 없는 필드를 참조할 때, `<page>.custom.ts`에서 동명 함수를 export하면 검증 통과.
 
 ## OpenAPI x- Extensions
 
@@ -333,12 +333,12 @@ Model name from filename: `courses.sql` → `Course` (singular: `ies`→`y`, `ss
 
 ## model/*.go
 
-- `// @dto` → Skip DDL table matching (pure DTOs: Token, Refund, etc.)
-- `CurrentUser` is auto-generated from `fullend.yaml` claims — do NOT create manually in model/
+- `// @dto` → DDL 테이블 매칭 스킵 (순수 DTO: Token, Refund 등)
+- `CurrentUser`는 `fullend.yaml` claims에서 자동 생성 — model/에 수동 생성 금지
 
 ## Mermaid stateDiagram
 
-`states/*.md`. Filename = diagram ID. Transition label = SSaC function name = operationId.
+`states/*.md`. 파일명 = diagram ID. Transition label = SSaC 함수명 = operationId.
 
 ```markdown
 # CourseState
@@ -351,7 +351,7 @@ stateDiagram-v2
 ​```
 ```
 
-SSaC: `// @state course {status: course.Status} "PublishCourse" "Cannot transition"`
+SSaC: `// @state course {status: course.Status} "PublishCourse" "상태 전이 불가"`
 
 ## OPA Rego
 
@@ -370,11 +370,11 @@ SSaC: `// @state course {status: course.Status} "PublishCourse" "Cannot transiti
 | `resource: table.column` | Direct lookup |
 | `resource: table.column via join_table.fk` | JOIN lookup |
 
-SSaC `@auth "action" "resource" {inputs} "message"` maps to Rego `input.action`/`input.resource`.
+SSaC `@auth "action" "resource" {inputs} "message"` → Rego `input.action`/`input.resource` 매핑.
 
 ## Gherkin Scenario
 
-`scenario/*.feature`. Tags: `@scenario` (business), `@invariant` (invariant verification).
+`scenario/*.feature`. Tags: `@scenario` (비즈니스), `@invariant` (불변 검증).
 
 ### Action Steps
 
@@ -385,7 +385,7 @@ METHOD operationId → result            # no-body + capture
 METHOD operationId                     # no-body only
 ```
 
-`→ token` auto-injects Authorization header.
+`→ token` → Authorization header 자동 주입.
 
 ### Assertion Steps
 
@@ -415,11 +415,11 @@ response.array count > N
 | Rule | Level |
 |---|---|
 | `backend.middleware` ↔ OpenAPI `securitySchemes` | ERROR |
-| SSaC `currentUser` → `backend.auth.claims` required | ERROR |
-| SSaC `currentUser.X` → X must exist in claims | ERROR |
-| SSaC `@auth` → claims required | ERROR |
-| x-sort/filter column ↔ DDL column exists | ERROR |
-| x-sort column ↔ DDL index exists | WARNING |
+| SSaC `currentUser` → `backend.auth.claims` 필수 | ERROR |
+| SSaC `currentUser.X` → claims에 X 존재 | ERROR |
+| SSaC `@auth` → claims 필수 | ERROR |
+| x-sort/filter column ↔ DDL column 존재 | ERROR |
+| x-sort column ↔ DDL index 존재 | WARNING |
 | x-include ↔ DDL FK | WARNING |
 | SSaC @result ↔ DDL table | WARNING |
 | SSaC args ↔ DDL column | WARNING |
@@ -427,7 +427,7 @@ response.array count > N
 | operationId → SSaC funcName | WARNING |
 | States transition → SSaC funcName | ERROR |
 | States transition → operationId | ERROR |
-| SSaC @state → stateDiagram exists | ERROR |
+| SSaC @state → stateDiagram 존재 | ERROR |
 | @state field → DDL column | ERROR |
 | Policy ↔ SSaC @auth (action, resource) | WARNING |
 | Policy @ownership → DDL table.column | ERROR |
@@ -437,9 +437,9 @@ response.array count > N
 | Scenario JSON fields → request schema | ERROR |
 | Scenario step order → States transitions | WARNING |
 | Func → SSaC @call matching | ERROR |
-| Func purity (I/O import forbidden) | ERROR |
+| Func purity (I/O import 금지) | ERROR |
 | Func body TODO stub | ERROR |
 | Func arg count ↔ Request fields | ERROR |
 | Func arg type ↔ Request field type | ERROR |
-| DDL table → SSaC reference | WARNING |
+| DDL table → SSaC 참조 | WARNING |
 | DDL column → OpenAPI schema | WARNING |

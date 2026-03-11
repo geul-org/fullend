@@ -1,7 +1,0 @@
-package service
-
-// @get []Review reviews = Review.ListByCourse(request.CourseID, query)
-// @response {
-//   reviews: reviews
-// }
-func ListReviews() {}

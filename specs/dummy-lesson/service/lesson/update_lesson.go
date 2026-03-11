@@ -1,9 +1,0 @@
-package service
-
-// @auth "update" "lesson" {id: request.LessonID} "권한 없음"
-// @get Lesson lesson = Lesson.FindByID(request.LessonID)
-// @empty lesson "차시를 찾을 수 없습니다"
-// @put Lesson.Update(request.LessonID, request.Title, request.VideoURL, request.SortOrder)
-// @response {
-// }
-func UpdateLesson() {}

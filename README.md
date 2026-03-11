@@ -7,7 +7,7 @@ specs/
 ├── fullend.yaml             → Project config (required)
 ├── api/openapi.yaml         → OpenAPI 3.x
 ├── db/*.sql                 → SQL DDL + sqlc queries
-├── service/*.go             → SSaC (comment DSL)
+├── service/**/*.ssac        → SSaC (comment DSL, .ssac extension)
 ├── model/*.go               → Go structs (// @dto for non-DDL types)
 ├── func/<pkg>/*.go          → Custom func implementations (optional)
 ├── states/*.md              → Mermaid stateDiagram (state transitions)
@@ -110,6 +110,16 @@ fullend ships with built-in function implementations that can be used via SSaC `
 | `image` | `thumbnail` | Thumbnail generation (200x200, PNG) |
 
 Projects can override these by providing custom implementations in `specs/<project>/func/<pkg>/`.
+
+## Built-in Models (pkg/)
+
+Package-prefix @model interfaces for non-DDL I/O. Configured via `fullend.yaml`.
+
+| Package | Interface | Backends | SSaC Usage |
+|---|---|---|---|
+| `session` | `SessionModel` (Set/Get/Delete + TTL) | PostgreSQL, Memory | `session.Session.Get({key: ...})` |
+| `cache` | `CacheModel` (Set/Get/Delete + TTL) | PostgreSQL, Memory | `cache.Cache.Set({key: ..., value: ..., ttl: ...})` |
+| `file` | `FileModel` (Upload/Download/Delete) | S3, LocalFile | `file.File.Upload({key: ..., body: ...})` |
 
 ## Middleware (Generated)
 

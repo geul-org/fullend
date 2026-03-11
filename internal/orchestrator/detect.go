@@ -52,7 +52,7 @@ func DetectSSOTs(root string) ([]DetectedSSOT, error) {
 	}{
 		{KindOpenAPI, "api/openapi.yaml"},
 		{KindDDL, "db/*.sql"},
-		{KindSSaC, "service/*.go"},
+		{KindSSaC, "service/*.ssac"},
 		{KindModel, "model/*.go"},
 		{KindSTML, "frontend/*.html"},
 		{KindTerraform, "terraform/*.tf"},
@@ -67,8 +67,8 @@ func DetectSSOTs(root string) ([]DetectedSSOT, error) {
 			}
 			found = append(found, DetectedSSOT{Kind: c.kind, Path: dir})
 		} else if c.kind == KindSSaC {
-			// Also check for domain folder structure: service/{domain}/*.go
-			subMatches, _ := filepath.Glob(filepath.Join(abs, "service", "*", "*.go"))
+			// Also check for domain folder structure: service/{domain}/*.ssac
+			subMatches, _ := filepath.Glob(filepath.Join(abs, "service", "*", "*.ssac"))
 			if len(subMatches) > 0 {
 				found = append(found, DetectedSSOT{Kind: c.kind, Path: filepath.Join(abs, "service")})
 			}

@@ -1,9 +1,0 @@
-package service
-
-// @auth "delete" "lesson" {id: request.LessonID} "권한 없음"
-// @get Lesson lesson = Lesson.FindByID(request.LessonID)
-// @empty lesson "차시를 찾을 수 없습니다"
-// @delete Lesson.Delete(request.LessonID)
-// @response {
-// }
-func DeleteLesson() {}
