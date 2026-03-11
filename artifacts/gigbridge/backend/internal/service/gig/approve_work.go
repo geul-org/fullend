@@ -67,7 +67,7 @@ func (h *Handler) ApproveWork(c *gin.Context) {
 	}
 
 	if _, err = mail.SendTemplateEmail(mail.SendTemplateEmailRequest{Subject: "Work Approved", TemplateName: "work_approved", To: freelancerUser.Email}); err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "호출 실패"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "호출 실패"})
 		return
 	}
 

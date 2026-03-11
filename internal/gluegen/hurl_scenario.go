@@ -96,6 +96,7 @@ func renderFeatureHurl(f *scenario.Feature, doc *openapi3.T, opMap map[string]op
 		// Track captures and token state.
 		captures := make(map[string]bool)
 		hasToken := false
+		currentToken := "token" // last captured token name
 
 		idx := 0
 		for idx < len(steps) {
@@ -113,7 +114,7 @@ func renderFeatureHurl(f *scenario.Feature, doc *openapi3.T, opMap map[string]op
 					}
 					j++
 				}
-				writeActionHurlV2(&buf, step, statusCode, trailingAssertions, opMap, doc, captures, &hasToken, emailPrefix)
+				writeActionHurlV2(&buf, step, statusCode, trailingAssertions, opMap, doc, captures, &hasToken, &currentToken, emailPrefix)
 				idx = j
 			} else {
 				// Standalone assertion (shouldn't happen normally, but handle gracefully).
@@ -142,7 +143,7 @@ func uniquifyEmails(json, prefix string) string {
 	return emailRe.ReplaceAllString(json, fmt.Sprintf(`"%s-$1@test.com"`, prefix))
 }
 
-func writeActionHurlV2(buf *strings.Builder, step scenario.Step, statusCode string, assertions []scenario.Step, opMap map[string]operationInfo, doc *openapi3.T, captures map[string]bool, hasToken *bool, emailPrefix string) {
+func writeActionHurlV2(buf *strings.Builder, step scenario.Step, statusCode string, assertions []scenario.Step, opMap map[string]operationInfo, doc *openapi3.T, captures map[string]bool, hasToken *bool, currentToken *string, emailPrefix string) {
 	info, ok := opMap[step.OperationID]
 	if !ok {
 		buf.WriteString(fmt.Sprintf("# SKIP: %s %s (operationId not found)\n\n", step.Method, step.OperationID))
@@ -160,7 +161,7 @@ func writeActionHurlV2(buf *strings.Builder, step scenario.Step, statusCode stri
 
 	// Auth header if token captured and endpoint needs auth.
 	if *hasToken && needsAuth(info.Op) {
-		buf.WriteString("Authorization: Bearer {{token}}\n")
+		buf.WriteString(fmt.Sprintf("Authorization: Bearer {{%s}}\n", *currentToken))
 	}
 
 	// Request body: render JSON with variable substitution.
@@ -176,8 +177,10 @@ func writeActionHurlV2(buf *strings.Builder, step scenario.Step, statusCode stri
 	// Captures (only for 2xx responses).
 	if step.Capture != "" && (statusCode == "200" || statusCode == "201") {
 		captures[step.Capture] = true
-		if step.Capture == "token" {
+		isTokenCapture := strings.Contains(strings.ToLower(step.Capture), "token")
+		if isTokenCapture {
 			*hasToken = true
+			*currentToken = step.Capture
 			tokenField := "token"
 			if respSchema := getResponseSchema(info.Op); respSchema != nil && respSchema.Properties != nil {
 				for name := range respSchema.Properties {
@@ -189,13 +192,17 @@ func writeActionHurlV2(buf *strings.Builder, step scenario.Step, statusCode stri
 				}
 			}
 			buf.WriteString("[Captures]\n")
-			buf.WriteString(fmt.Sprintf("token: jsonpath \"$.%s\"\n", tokenField))
+			buf.WriteString(fmt.Sprintf("%s: jsonpath \"$.%s\"\n", step.Capture, tokenField))
 		} else {
-			// Infer capture from response schema — skip if response is an array.
-			captureVar, jsonPath := inferScenarioCapture(step.Capture, info.Op)
-			if captureVar != "" {
+			// Infer capture from response schema.
+			// Use capture name as prefix for variable (e.g. gigResult → gigResult_gig.id)
+			// so that URL references like gigResult.gig.id resolve correctly.
+			respSchema := getResponseSchema(info.Op)
+			capVar, capPath := inferScenarioCaptureNamed(step.Capture, respSchema)
+			if capVar != "" {
 				buf.WriteString("[Captures]\n")
-				buf.WriteString(fmt.Sprintf("%s: jsonpath %q\n", captureVar, jsonPath))
+				buf.WriteString(fmt.Sprintf("%s: jsonpath %q\n", capVar, capPath))
+				captures[step.Capture+"_var"] = true // mark for URL resolution
 			}
 		}
 	}
@@ -420,6 +427,33 @@ func findJSONValue(json, fieldName string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// inferScenarioCaptureNamed infers capture variable using the feature capture name as prefix.
+// e.g. capture="gigResult", response has "gig" object with "id" → ("gigResult_gig.id", "$.gig.id")
+// This ensures URL references like gigResult.gig.id match the captured variable.
+func inferScenarioCaptureNamed(captureName string, respSchema *openapi3.Schema) (string, string) {
+	if respSchema == nil {
+		return "", ""
+	}
+	for name, propRef := range respSchema.Properties {
+		prop := propRef.Value
+		if prop == nil {
+			continue
+		}
+		if len(prop.Type.Slice()) > 0 && prop.Type.Slice()[0] == "array" {
+			continue
+		}
+		if prop.Properties != nil {
+			if _, hasID := prop.Properties["id"]; hasID {
+				return captureName + "_" + name + ".id", "$." + name + ".id"
+			}
+			if _, hasID := prop.Properties["ID"]; hasID {
+				return captureName + "_" + name + ".ID", "$." + name + ".ID"
+			}
+		}
+	}
+	return "", ""
 }
 
 // inferScenarioCapture infers capture variable and jsonpath from response schema.

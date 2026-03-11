@@ -30,7 +30,7 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 
 	if _, err = auth.VerifyPassword(auth.VerifyPasswordRequest{Password: password, PasswordHash: user.PasswordHash}); err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "호출 실패"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "호출 실패"})
 		return
 	}
 

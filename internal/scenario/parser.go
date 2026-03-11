@@ -9,13 +9,13 @@ import (
 )
 
 var (
-	// reActionStep matches: KEYWORD METHOD operationId [{JSON}] [→ capture]
+	// reActionStep matches: KEYWORD METHOD operationId [{JSON}] [→/-> capture]
 	reActionStep = regexp.MustCompile(
 		`^(Given|When|Then|And|But)\s+` +
 			`(GET|POST|PUT|DELETE)\s+` +
 			`(\w+)` +
 			`(?:\s+(\{.*\}))?` +
-			`(?:\s+→\s+(\w+))?$`,
+			`(?:\s+(?:→|->)\s+(\w+))?$`,
 	)
 
 	// reAssertStatus matches: KEYWORD status == CODE
