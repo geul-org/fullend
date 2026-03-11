@@ -95,6 +95,13 @@ authz:
 
 ## SSaC — Service Logic Declarations
 
+### File Layout
+
+- **One function per file.** Each `.ssac` file declares exactly one `func`.
+- **Domain subdirectory required.** Files must be placed under `service/<domain>/`, not directly in `service/`.
+  - Correct: `service/gig/create_gig.ssac`, `service/auth/login.ssac`
+  - Wrong: `service/create_gig.ssac`
+
 ### File Extension: `.ssac`
 
 Uses Go syntax but excluded from Go build via `.ssac` extension.
@@ -109,6 +116,8 @@ import "github.com/geul-org/fullend/pkg/auth"
 // @response { user: user }
 func Register() {}
 ```
+
+**Import declaration required.** When using `@call pkg.Func`, the package must be imported at the top of the file. Missing imports cause validation errors.
 
 ### 11 Sequence Types
 
@@ -138,6 +147,14 @@ func OnEvent(message MessageType) {}
 - Specify message type in function parameter (variable name must be `message`)
 - Message struct must be declared as a Go struct in the same .ssac file
 - Cannot use `@response` or `request`
+
+**`@put` does not return a value.** To use the updated record in `@response`, re-query with `@get` after `@put`:
+
+```go
+// @put Gig.UpdateStatus({ID: gig.ID, Status: "published"})
+// @get Gig updated = Gig.FindByID({ID: gig.ID})
+// @response { gig: updated }
+```
 
 Append `!` to suppress WARNINGs: `@delete!`, `@response!`
 
@@ -188,6 +205,23 @@ properties:
 | `offset` | `Page[T]` | `(*pagination.Page[T], error)` |
 | `cursor` | `Cursor[T]` | `(*pagination.Cursor[T], error)` |
 | none | `[]T` or `T` | `([]T, error)` or `(*T, error)` |
+
+**OpenAPI response for Page[T]:** Declare only `items` (array) and `total` (integer) in the response schema. `limit`/`offset` are handled automatically by the pagination framework — do not include them in the OpenAPI response.
+
+```yaml
+responses:
+  200:
+    content:
+      application/json:
+        schema:
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Gig'
+            total:
+              type: integer
+```
 
 ### Package-Prefix @model (Non-DDL Models)
 
@@ -509,6 +543,7 @@ When multiple models have the same method name (Create, FindByID, etc.), **add a
 
 ## model/*.go
 
+- **Directory required.** Even if there are no `@dto` types, `model/model.go` must exist with at least a `package model` declaration. The codegen imports this package unconditionally.
 - `// @dto` → Skip DDL table matching (pure DTOs: Token, Refund, etc.)
 - `CurrentUser` is auto-generated from `fullend.yaml` claims — do NOT create manually in model/
 
@@ -531,7 +566,22 @@ SSaC: `// @state course {status: course.Status} "PublishCourse" "Cannot transiti
 
 ## OPA Rego
 
-`policy/*.rego`. 5 allow patterns: unconditional, role-based, owner-based, role+owner, multiple actions.
+`policy/*.rego`. Uses **OPA v1 syntax** — `if` keyword is required in all rules.
+
+```rego
+# OPA v1 (correct)
+allow if {
+    input.action == "CreateGig"
+    input.resource == "gig"
+}
+
+# OPA v0 (wrong — will not parse)
+allow {
+    input.action == "CreateGig"
+}
+```
+
+5 allow patterns: unconditional, role-based, owner-based, role+owner, multiple actions.
 
 ### @ownership Annotations
 
@@ -664,6 +714,16 @@ response.array count > N
 | FK + `DEFAULT 0` → sentinel record required in target table | WARNING |
 
 ## DDL Authoring Guide
+
+### Go Reserved Words as Column Names
+
+DDL column names that are Go reserved words (`type`, `range`, `select`, `map`, etc.) cause sqlc-generated code to fail compilation. Rename these columns:
+
+| Avoid | Use Instead |
+|---|---|
+| `type` | `tx_type`, `gig_type`, `user_type` |
+| `range` | `date_range`, `price_range` |
+| `select` | `selected`, `selection` |
 
 ### FK DEFAULT 0 Pattern (Sentinel Record)
 
