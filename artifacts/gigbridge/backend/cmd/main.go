@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"flag"
 	"log"
+	"os"
 
 	_ "github.com/lib/pq"
 
@@ -18,6 +19,11 @@ func main() {
 	addr := flag.String("addr", ":8080", "listen address")
 	dsn := flag.String("dsn", "postgres://localhost:5432/app?sslmode=disable", "database connection string")
 	dbDriver := flag.String("db", "postgres", "database driver (postgres, mysql)")
+	jwtSecretDefault := os.Getenv("JWT_SECRET")
+	if jwtSecretDefault == "" {
+		jwtSecretDefault = "secret"
+	}
+	jwtSecret := flag.String("jwt-secret", jwtSecretDefault, "JWT signing secret")
 	flag.Parse()
 
 	conn, err := sql.Open(*dbDriver, *dsn)
@@ -30,6 +36,8 @@ func main() {
 		log.Fatalf("database ping failed: %v", err)
 	}
 
+	os.Setenv("JWT_SECRET", *jwtSecret)
+
 	if err := authz.Init(conn); err != nil {
 		log.Fatalf("authz init failed: %v", err)
 	}
@@ -37,6 +45,7 @@ func main() {
 	server := &service.Server{
 		Auth: &authsvc.Handler{
 			UserModel: model.NewUserModel(conn),
+			JWTSecret: *jwtSecret,
 		},
 		Gig: &gigsvc.Handler{
 			GigModel: model.NewGigModel(conn),
@@ -44,6 +53,7 @@ func main() {
 			TransactionModel: model.NewTransactionModel(conn),
 			UserModel: model.NewUserModel(conn),
 		},
+		JWTSecret: *jwtSecret,
 	}
 
 	r := service.SetupRouter(server)

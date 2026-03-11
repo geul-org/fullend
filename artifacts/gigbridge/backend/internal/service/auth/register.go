@@ -10,8 +10,8 @@ func (h *Handler) Register(c *gin.Context) {
 	var req struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
-		Role     string `json:"role"`
 		Name     string `json:"name"`
+		Role     string `json:"role"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
@@ -19,8 +19,8 @@ func (h *Handler) Register(c *gin.Context) {
 	}
 	email := req.Email
 	password := req.Password
-	role := req.Role
 	name := req.Name
+	role := req.Role
 
 	existingUser, err := h.UserModel.FindByEmail(email)
 	if err != nil {

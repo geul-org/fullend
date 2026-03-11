@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -20,6 +21,10 @@ type IssueTokenResponse struct {
 }
 
 func IssueToken(req IssueTokenRequest) (IssueTokenResponse, error) {
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		secret = "secret"
+	}
 	claims := jwt.MapClaims{
 		"user_id": req.UserID,
 		"email":   req.Email,
@@ -27,6 +32,6 @@ func IssueToken(req IssueTokenRequest) (IssueTokenResponse, error) {
 		"exp":     time.Now().Add(24 * time.Hour).Unix(),
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	signed, err := token.SignedString([]byte("secret"))
+	signed, err := token.SignedString([]byte(secret))
 	return IssueTokenResponse{AccessToken: signed}, err
 }

@@ -132,6 +132,21 @@ func generateServerStructWithDomains(intDir string, serviceFuncs []ssacparser.Se
 	return generateCentralServer(serviceDir, domains, serviceFuncs, modulePath, doc)
 }
 
+// domainNeedsJWTSecret checks if any service function in the domain calls auth.IssueToken.
+func domainNeedsJWTSecret(serviceFuncs []ssacparser.ServiceFunc, domain string) bool {
+	for _, fn := range serviceFuncs {
+		if fn.Domain != domain {
+			continue
+		}
+		for _, seq := range fn.Sequences {
+			if seq.Model == "auth.IssueToken" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // generateDomainHandler creates service/{domain}/handler.go with the Handler struct.
 func generateDomainHandler(serviceDir, domain string, serviceFuncs []ssacparser.ServiceFunc, modulePath string) error {
 	domainDir := filepath.Join(serviceDir, domain)
@@ -157,6 +172,10 @@ func generateDomainHandler(serviceDir, domain string, serviceFuncs []ssacparser.
 	for _, f := range funcs {
 		fieldName := ucFirst(f)
 		b.WriteString(fmt.Sprintf("\t%s func(args ...interface{}) (interface{}, error)\n", fieldName))
+	}
+
+	if domainNeedsJWTSecret(serviceFuncs, domain) {
+		b.WriteString("\tJWTSecret string\n")
 	}
 
 	b.WriteString("}\n")
@@ -231,10 +250,14 @@ func generateCentralServer(serviceDir string, domains []string, serviceFuncs []s
 		b.WriteString(fmt.Sprintf("\t%s func(args ...interface{}) (interface{}, error)\n", fieldName))
 	}
 
-	b.WriteString("}\n\n")
-
 	// Detect security schemes from OpenAPI.
 	hasBearer := hasBearerScheme(doc)
+
+	if hasBearer {
+		b.WriteString("\tJWTSecret string\n")
+	}
+
+	b.WriteString("}\n\n")
 
 	// SetupRouter creates a gin.Engine with routes.
 	b.WriteString("// SetupRouter creates a gin.Engine that routes requests to the Server.\n")
@@ -244,7 +267,7 @@ func generateCentralServer(serviceDir string, domains []string, serviceFuncs []s
 	if hasBearer {
 		b.WriteString("\t// Auth group — JWT middleware extracts currentUser into context.\n")
 		b.WriteString("\tauth := r.Group(\"/\")\n")
-		b.WriteString("\tauth.Use(middleware.BearerAuth(\"secret\"))\n\n")
+		b.WriteString("\tauth.Use(middleware.BearerAuth(s.JWTSecret))\n\n")
 	}
 
 	if doc != nil {
@@ -379,9 +402,17 @@ func generateMainWithDomains(artifactsDir string, serviceFuncs []ssacparser.Serv
 			mFieldName := ucFirst(lcFirst(m) + "Model")
 			handlerLines = append(handlerLines, fmt.Sprintf("\t\t\t%s: model.New%sModel(conn),", mFieldName, m))
 		}
+		if domainNeedsJWTSecret(serviceFuncs, domain) {
+			handlerLines = append(handlerLines, "\t\t\tJWTSecret: *jwtSecret,")
+		}
 		initLines = append(initLines, fmt.Sprintf("\t\t%s: &%ssvc.Handler{", fieldName, domain))
 		initLines = append(initLines, handlerLines...)
 		initLines = append(initLines, "\t\t},")
+	}
+
+	// Add JWTSecret to Server struct if bearer auth is used.
+	if anyNeedsAuth {
+		initLines = append(initLines, "\t\tJWTSecret: *jwtSecret,")
 	}
 
 	initBlock := strings.Join(initLines, "\n")
@@ -405,6 +436,8 @@ func generateMainWithDomains(artifactsDir string, serviceFuncs []ssacparser.Serv
 	authzBlock := ""
 	if anyNeedsAuth {
 		authzBlock = `
+	os.Setenv("JWT_SECRET", *jwtSecret)
+
 	if err := authz.Init(conn); err != nil {
 		log.Fatalf("authz init failed: %v", err)
 	}
@@ -451,12 +484,28 @@ func generateMainWithDomains(artifactsDir string, serviceFuncs []ssacparser.Serv
 		}
 	}
 
+	// JWT flag line.
+	jwtFlagLine := ""
+	if anyNeedsAuth {
+		jwtFlagLine = `
+	jwtSecretDefault := os.Getenv("JWT_SECRET")
+	if jwtSecretDefault == "" {
+		jwtSecretDefault = "secret"
+	}
+	jwtSecret := flag.String("jwt-secret", jwtSecretDefault, "JWT signing secret")`
+	}
+
+	osImport := ""
+	if anyNeedsAuth {
+		osImport = "\n\t\"os\""
+	}
+
 	src := fmt.Sprintf(`package main
 
 import (
 	"database/sql"
 	"flag"
-	"log"
+	"log"%s
 
 	_ "github.com/lib/pq"
 %s%s
@@ -465,7 +514,7 @@ import (
 func main() {
 	addr := flag.String("addr", ":8080", "listen address")
 	dsn := flag.String("dsn", "postgres://localhost:5432/app?sslmode=disable", "database connection string")
-	dbDriver := flag.String("db", "postgres", "database driver (postgres, mysql)")
+	dbDriver := flag.String("db", "postgres", "database driver (postgres, mysql)")%s
 	flag.Parse()
 
 	conn, err := sql.Open(*dbDriver, *dsn)
@@ -486,7 +535,7 @@ func main() {
 	log.Printf("server listening on %%s", *addr)
 	log.Fatal(r.Run(*addr))
 }
-`, importBlock, queueImport, authzBlock, queueInitBlock, initBlock, queueSubscribeBlock)
+`, osImport, importBlock, queueImport, jwtFlagLine, authzBlock, queueInitBlock, initBlock, queueSubscribeBlock)
 
 	path := filepath.Join(artifactsDir, "backend", "cmd", "main.go")
 	return os.WriteFile(path, []byte(src), 0644)
