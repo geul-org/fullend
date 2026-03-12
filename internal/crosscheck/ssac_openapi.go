@@ -48,6 +48,11 @@ func CheckSSaCOpenAPI(funcs []ssacparser.ServiceFunc, st *ssacvalidator.SymbolTa
 	// Rule 5 & 6: SSaC @response fields ↔ OpenAPI response schema properties.
 	errs = append(errs, checkResponseFields(funcs, st, doc)...)
 
+	// Rule 7: SSaC ErrStatus → OpenAPI error response defined.
+	if doc != nil {
+		errs = append(errs, checkErrStatus(funcs, doc)...)
+	}
+
 	return errs
 }
 
@@ -189,4 +194,64 @@ func codeToInt(code string) int {
 	default:
 		return 0
 	}
+}
+
+// errStatusTypes are the SSaC sequence types that support custom ErrStatus.
+var errStatusTypes = map[string]int{
+	"empty": 404,
+	"exists": 409,
+	"state": 409,
+	"auth":  403,
+}
+
+// checkErrStatus validates that SSaC ErrStatus codes are defined in OpenAPI responses.
+func checkErrStatus(funcs []ssacparser.ServiceFunc, doc *openapi3.T) []CrossError {
+	var errs []CrossError
+
+	// Build operationId → operation map.
+	opMap := make(map[string]*openapi3.Operation)
+	if doc.Paths != nil {
+		for _, pathItem := range doc.Paths.Map() {
+			for _, op := range []*openapi3.Operation{
+				pathItem.Get, pathItem.Post, pathItem.Put,
+				pathItem.Delete, pathItem.Patch,
+			} {
+				if op != nil && op.OperationID != "" {
+					opMap[op.OperationID] = op
+				}
+			}
+		}
+	}
+
+	for _, fn := range funcs {
+		op := opMap[fn.Name]
+		if op == nil || op.Responses == nil {
+			continue
+		}
+
+		for seqIdx, seq := range fn.Sequences {
+			defaultStatus, ok := errStatusTypes[seq.Type]
+			if !ok {
+				continue
+			}
+
+			statusCode := defaultStatus
+			if seq.ErrStatus != 0 {
+				statusCode = seq.ErrStatus
+			}
+
+			codeStr := fmt.Sprintf("%d", statusCode)
+			resp := op.Responses.Status(statusCode)
+			if resp == nil {
+				errs = append(errs, CrossError{
+					Rule:       "SSaC @" + seq.Type + " → OpenAPI",
+					Context:    fmt.Sprintf("%s:%s seq[%d]", fn.FileName, fn.Name, seqIdx),
+					Message:    fmt.Sprintf("SSaC @%s uses HTTP %s but OpenAPI %s has no %s response defined", seq.Type, codeStr, fn.Name, codeStr),
+					Suggestion: fmt.Sprintf("OpenAPI %s responses에 %s 응답을 추가하세요", fn.Name, codeStr),
+				})
+			}
+		}
+	}
+
+	return errs
 }

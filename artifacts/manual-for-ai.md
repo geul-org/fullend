@@ -127,10 +127,10 @@ func Register() {}
 | `@post` | Create | `Type var = Model.Method(args...)` | Required |
 | `@put` | Update | `Model.Method(args...)` | Required |
 | `@delete` | Delete | `Model.Method(args...)` | 0 args = WARNING |
-| `@empty` | Guard: nil/zero → 404 | `target "message"` | — |
-| `@exists` | Guard: not nil → 409 | `target "message"` | — |
-| `@state` | State transition | `diagramID {inputs} "transition" "message"` | — |
-| `@auth` | Permission check | `"action" "resource" {inputs} "message"` | — |
+| `@empty` | Guard: nil/zero → 404 | `target "message" [STATUS]` | STATUS: custom HTTP code (default 404) |
+| `@exists` | Guard: not nil → 409 | `target "message" [STATUS]` | STATUS: custom HTTP code (default 409) |
+| `@state` | State transition | `diagramID {inputs} "transition" "message" [STATUS]` | STATUS: custom HTTP code (default 409) |
+| `@auth` | Permission check | `"action" "resource" {inputs} "message" [STATUS]` | STATUS: custom HTTP code (default 403) |
 | `@call` | Function call | `[Type var =] package.Func(args...)` | — |
 | `@publish` | Queue publish | `"topic" {payload} [{options}]` | — |
 | `@response` | JSON response | `varName` or `{ field: var, ... }` | — |
@@ -711,6 +711,7 @@ response.array count > N
 | `@subscribe` message fields → `@publish` payload fields | WARNING |
 | `@publish`/`@subscribe` used → `queue.backend` required | ERROR |
 | `@auth` inputs → authz CheckRequest fields | ERROR |
+| `@empty/@exists/@state/@auth` ErrStatus → OpenAPI response defined | ERROR |
 | FK + `DEFAULT 0` → sentinel record required in target table | WARNING |
 
 ## DDL Authoring Guide

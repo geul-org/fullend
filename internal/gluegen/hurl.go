@@ -67,6 +67,11 @@ func generateHurlTests(doc *openapi3.T, outDir, specsDir string, diagrams []*sta
 			continue // already written
 		}
 
+		// Skip steps whose path params cannot be resolved from captured variables.
+		if !canResolvePathParams(step.Path, captures) {
+			continue
+		}
+
 		resource := inferResource(step.Path)
 		if resource != currentResource {
 			currentResource = resource
@@ -621,6 +626,38 @@ func buildXQueryParams(op *openapi3.Operation) string {
 	// x-include is codegen metadata only — no runtime query parameter.
 
 	return strings.Join(params, "&")
+}
+
+// canResolvePathParams checks if all path parameters in a path can be resolved
+// from captured variables. Returns false if any param would be undefined at runtime.
+func canResolvePathParams(path string, captures map[string]bool) bool {
+	segments := strings.Split(path, "/")
+	for i, seg := range segments {
+		if !strings.HasPrefix(seg, "{") || !strings.HasSuffix(seg, "}") {
+			continue
+		}
+		paramName := seg[1 : len(seg)-1]
+		snakeParam := pascalToSnakeHurl(paramName)
+
+		// Check plain snake param.
+		if captures[snakeParam] {
+			continue
+		}
+
+		// Check derived from preceding segment: /gigs/{ID} → gig_id.
+		if i > 0 {
+			resource := segments[i-1]
+			singular := strings.TrimSuffix(resource, "s")
+			derivedVar := singular + "_" + snakeParam
+			if captures[derivedVar] {
+				continue
+			}
+		}
+
+		// Unresolvable param found.
+		return false
+	}
+	return true
 }
 
 // substitutePathParams replaces {ParamName} with {{captured_var}} using captured variables.

@@ -294,7 +294,7 @@ func generateScanFunc(b *strings.Builder, modelName string, table *ddlTable) {
 	lowerName := strcase.ToGoCamel(modelName)
 	varName := string(lowerName[0])
 
-	b.WriteString(fmt.Sprintf("func scan%s(s interface{ Scan(...interface{}) error }) (*%s, error) {\n", modelName, modelName))
+	b.WriteString(fmt.Sprintf("func scan%s(row interface{ Scan(...interface{}) error }) (*%s, error) {\n", modelName, modelName))
 	b.WriteString(fmt.Sprintf("\tvar %s %s\n", varName, modelName))
 
 	scanFields := make([]string, len(table.Columns))
@@ -302,7 +302,7 @@ func generateScanFunc(b *strings.Builder, modelName string, table *ddlTable) {
 		scanFields[i] = fmt.Sprintf("&%s.%s", varName, col.GoName)
 	}
 
-	b.WriteString(fmt.Sprintf("\terr := s.Scan(%s)\n", strings.Join(scanFields, ", ")))
+	b.WriteString(fmt.Sprintf("\terr := row.Scan(%s)\n", strings.Join(scanFields, ", ")))
 	b.WriteString("\tif err != nil {\n")
 	b.WriteString("\t\treturn nil, err\n")
 	b.WriteString("\t}\n")
