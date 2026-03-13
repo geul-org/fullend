@@ -155,13 +155,15 @@ func buildOperationResponseProps(doc *openapi3.T) map[string]map[string]bool {
 
 			props := make(map[string]bool)
 
-			// Check 200 and 201 responses.
-			for _, code := range []string{"200", "201"} {
-				resp := op.Responses.Status(codeToInt(code))
-				if resp == nil || resp.Value == nil || resp.Value.Content == nil {
+			// Check all 2xx responses.
+			for code, respRef := range op.Responses.Map() {
+				if len(code) != 3 || code[0] != '2' {
 					continue
 				}
-				ct := resp.Value.Content.Get("application/json")
+				if respRef == nil || respRef.Value == nil || respRef.Value.Content == nil {
+					continue
+				}
+				ct := respRef.Value.Content.Get("application/json")
 				if ct == nil || ct.Schema == nil {
 					continue
 				}

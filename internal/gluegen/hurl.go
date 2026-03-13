@@ -421,7 +421,7 @@ func writeAuthPair(buf *strings.Builder, registerOp *openapi3.Operation, registe
 		reqSchema := getRequestSchema(registerOp)
 		body := generateRequestBodyWithOverrides(reqSchema, role, emailPrefix)
 		buf.WriteString(body + "\n")
-		buf.WriteString("\nHTTP 200\n")
+		buf.WriteString(fmt.Sprintf("\nHTTP %s\n", getSuccessHTTPCode(registerOp)))
 
 		respSchema := getResponseSchema(registerOp)
 		asserts := generateResponseAssertions(respSchema, nil)
@@ -445,7 +445,7 @@ func writeAuthPair(buf *strings.Builder, registerOp *openapi3.Operation, registe
 		reqSchema := getRequestSchema(loginOp)
 		body := generateLoginBodyWithEmail(reqSchema, emailPrefix)
 		buf.WriteString(body + "\n")
-		buf.WriteString("\nHTTP 200\n")
+		buf.WriteString(fmt.Sprintf("\nHTTP %s\n", getSuccessHTTPCode(loginOp)))
 
 		// Find token field path from response schema (handles nested objects).
 		tokenField := findTokenJSONPath(getResponseSchema(loginOp))
@@ -544,7 +544,7 @@ func writeStep(buf *strings.Builder, step scenarioStep, captures map[string]bool
 		}
 	}
 
-	buf.WriteString("\nHTTP 200\n")
+	buf.WriteString(fmt.Sprintf("\nHTTP %s\n", getSuccessHTTPCode(op)))
 
 	// Captures: extract ID from POST responses.
 	if step.Method == "POST" {

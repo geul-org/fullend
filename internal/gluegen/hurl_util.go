@@ -157,17 +157,34 @@ func getRequestSchema(op *openapi3.Operation) *openapi3.Schema {
 	return resolveSchema(ct.Schema)
 }
 
-// getResponseSchema extracts the 200 response schema from an operation.
+// getResponseSchema extracts the 2xx success response schema from an operation.
 func getResponseSchema(op *openapi3.Operation) *openapi3.Schema {
-	resp := op.Responses.Status(200)
-	if resp == nil || resp.Value == nil || resp.Value.Content == nil {
+	if op.Responses == nil {
 		return nil
 	}
-	ct := resp.Value.Content.Get("application/json")
-	if ct == nil || ct.Schema == nil {
-		return nil
+	// Try explicit 2xx codes first, then fall back to 200.
+	for code, respRef := range op.Responses.Map() {
+		if len(code) == 3 && code[0] == '2' && respRef != nil && respRef.Value != nil && respRef.Value.Content != nil {
+			ct := respRef.Value.Content.Get("application/json")
+			if ct != nil && ct.Schema != nil {
+				return resolveSchema(ct.Schema)
+			}
+		}
 	}
-	return resolveSchema(ct.Schema)
+	return nil
+}
+
+// getSuccessHTTPCode returns the numeric 2xx success code string for an operation (e.g. "200", "201", "204").
+// Falls back to "200" if no explicit 2xx is found.
+func getSuccessHTTPCode(op *openapi3.Operation) string {
+	if op.Responses != nil {
+		for code := range op.Responses.Map() {
+			if len(code) == 3 && code[0] == '2' {
+				return code
+			}
+		}
+	}
+	return "200"
 }
 
 // needsAuth returns true if the operation requires authentication.
