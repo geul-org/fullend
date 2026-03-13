@@ -107,8 +107,8 @@ func TestCheckCaptureRefs_QuotedValuesIgnored(t *testing.T) {
 
 func TestCheckTokenRoles_Valid(t *testing.T) {
 	steps := []scenario.Step{
-		{IsAction: true, OperationID: "Register", Method: "POST", JSON: `{"role": "freelancer"}`},
-		{IsAction: true, OperationID: "Login", Method: "POST", Capture: "flToken"},
+		{IsAction: true, OperationID: "Register", Method: "POST", JSON: `{"email":"fl@test.com","role": "freelancer"}`},
+		{IsAction: true, OperationID: "Login", Method: "POST", JSON: `{"email":"fl@test.com"}`, Capture: "flToken"},
 		{Assertion: scenario.Assertion{Kind: "status", Value: "200"}},
 		{IsAction: true, OperationID: "SubmitProposal", Method: "POST"},
 		{Assertion: scenario.Assertion{Kind: "status", Value: "200"}},
@@ -126,8 +126,8 @@ func TestCheckTokenRoles_Valid(t *testing.T) {
 
 func TestCheckTokenRoles_WrongRole(t *testing.T) {
 	steps := []scenario.Step{
-		{IsAction: true, OperationID: "Register", Method: "POST", JSON: `{"role": "client"}`},
-		{IsAction: true, OperationID: "Login", Method: "POST", Capture: "clientToken"},
+		{IsAction: true, OperationID: "Register", Method: "POST", JSON: `{"email":"cl@test.com","role": "client"}`},
+		{IsAction: true, OperationID: "Login", Method: "POST", JSON: `{"email":"cl@test.com"}`, Capture: "clientToken"},
 		{Assertion: scenario.Assertion{Kind: "status", Value: "200"}},
 		{IsAction: true, OperationID: "SubmitProposal", Method: "POST"},
 		{Assertion: scenario.Assertion{Kind: "status", Value: "200"}},
@@ -149,8 +149,8 @@ func TestCheckTokenRoles_WrongRole(t *testing.T) {
 func TestCheckTokenRoles_IntentionalRejection(t *testing.T) {
 	// Using wrong role but expecting 403 → should NOT warn.
 	steps := []scenario.Step{
-		{IsAction: true, OperationID: "Register", Method: "POST", JSON: `{"role": "client"}`},
-		{IsAction: true, OperationID: "Login", Method: "POST", Capture: "clientToken"},
+		{IsAction: true, OperationID: "Register", Method: "POST", JSON: `{"email":"cl@test.com","role": "client"}`},
+		{IsAction: true, OperationID: "Login", Method: "POST", JSON: `{"email":"cl@test.com"}`, Capture: "clientToken"},
 		{Assertion: scenario.Assertion{Kind: "status", Value: "200"}},
 		{IsAction: true, OperationID: "SubmitProposal", Method: "POST"},
 		{Assertion: scenario.Assertion{Kind: "status", Value: "403"}},

@@ -399,10 +399,10 @@ func buildOpRoleMap(funcs []ssacparser.ServiceFunc, policies []*policy.Policy) m
 func checkTokenRoles(file, scenarioName string, steps []scenario.Step, opRoles map[string][]string) []CrossError {
 	var errs []CrossError
 
-	// Track: capture name → role (from Register step preceding Login capture).
-	tokenRoles := make(map[string]string) // capture name → role
-	var pendingRole string                // role from the last Register step
-	var currentToken string               // last captured token name
+	// Track: email → role (from Register steps), capture name → role (from Login steps).
+	emailRoles := make(map[string]string)  // email → role
+	tokenRoles := make(map[string]string)  // capture name → role
+	var currentToken string                // last captured token name
 
 	for i, step := range steps {
 		if !step.IsAction {
@@ -411,17 +411,21 @@ func checkTokenRoles(file, scenarioName string, steps []scenario.Step, opRoles m
 
 		switch step.OperationID {
 		case "Register":
-			// Extract role from JSON.
-			pendingRole = extractJSONValue(step.JSON, "role")
+			// Extract role and email from JSON.
+			role := extractJSONValue(step.JSON, "role")
+			email := extractJSONValue(step.JSON, "email")
+			if role != "" && email != "" {
+				emailRoles[email] = role
+			}
 
 		case "Login":
-			// If this Login captures a token, associate it with pendingRole.
+			// If this Login captures a token, look up role by email.
 			if step.Capture != "" {
-				if pendingRole != "" {
-					tokenRoles[step.Capture] = pendingRole
+				email := extractJSONValue(step.JSON, "email")
+				if role, ok := emailRoles[email]; ok {
+					tokenRoles[step.Capture] = role
 				}
 				currentToken = step.Capture
-				pendingRole = ""
 			}
 
 		default:
