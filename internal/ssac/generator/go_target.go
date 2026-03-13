@@ -41,7 +41,7 @@ func (g *GoTarget) GenerateModelInterfaces(funcs []parser.ServiceFunc, st *valid
 		return nil
 	}
 
-	code := renderInterfaces(interfaces, hasQueryOpts(st))
+	code := renderInterfaces(interfaces)
 	formatted, err := format.Source(code)
 	if err != nil {
 		return fmt.Errorf("models_gen.go gofmt 실패: %w\n--- raw ---\n%s", err, string(code))

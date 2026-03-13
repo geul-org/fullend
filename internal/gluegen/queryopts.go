@@ -44,6 +44,16 @@ type FilterConfig struct {
 	Allowed []string
 }
 
+// QueryOpts holds parsed query parameters for pagination, sort, and filter.
+type QueryOpts struct {
+	Limit   int
+	Offset  int
+	Cursor  string
+	SortCol string
+	SortDir string
+	Filters map[string]string
+}
+
 // ParseQueryOpts extracts QueryOpts from a gin context, validated against config.
 func ParseQueryOpts(c *gin.Context, cfg QueryOptsConfig) QueryOpts {
 	var opts QueryOpts

@@ -1,6 +1,6 @@
 # fullend
 
-Full-stack SSOT orchestrator — validates consistency across 9 SSOT sources (fullend.yaml, STML, OpenAPI, SSaC, SQL DDL, Mermaid stateDiagram, OPA Rego, Gherkin Scenario, Func Spec) and generates code from them in a single CLI.
+Full-stack SSOT orchestrator — validates consistency across 9 SSOT sources (fullend.yaml, STML, OpenAPI, SSaC, SQL DDL, Mermaid stateDiagram, OPA Rego, Hurl Scenario, Func Spec) and generates code from them in a single CLI.
 
 ```
 specs/
@@ -12,7 +12,8 @@ specs/
 ├── func/<pkg>/*.go          → Custom func implementations (optional)
 ├── states/*.md              → Mermaid stateDiagram (state transitions)
 ├── policy/*.rego            → OPA Rego (authorization policies)
-├── scenario/*.feature       → Gherkin (business scenarios)
+├── tests/scenario-*.hurl    → Hurl scenario tests
+├── tests/invariant-*.hurl   → Hurl invariant tests
 ├── frontend/*.html          → STML (HTML5 + data-*)
 ```
 
@@ -35,16 +36,17 @@ fullend validate --skip states <specs-dir>
 
 ```
 ✓ Config       my-project, go/gin, typescript/react
-✓ OpenAPI      7 endpoints
-✓ DDL          3 tables, 18 columns
-✓ SSaC         7 service functions
-✓ Model        3 files
-✓ STML         4 pages, 6 bindings
-✓ States       1 diagrams, 3 transitions
-✓ Policy       1 files, 5 rules, 3 ownership mappings
-✓ Scenario     4 features, 5 scenarios
-✓ Func         3 funcs
+✓ OpenAPI      12 endpoints
+✓ DDL          4 tables, 23 columns
+✓ SSaC         12 service functions
+✓ Model        1 files
+✓ STML         2 pages, 2 bindings
+✓ States       2 diagrams, 7 transitions
+✓ Policy       1 files, 7 rules, 3 ownership mappings
+✓ Scenario     3 scenario hurl files
+✓ Func         2 funcs
 ✓ Cross        0 mismatches
+— Contract     no artifacts
 
 All SSOT sources are consistent.
 ```
@@ -56,7 +58,6 @@ Skip kinds: `openapi`, `ddl`, `ssac`, `model`, `stml`, `states`, `policy`, `scen
 Validates first, then generates code from all SSOTs. Accepts the same `--skip` option.
 
 ```bash
-fullend gen <specs-dir> <artifacts-dir>
 fullend gen <specs-dir> <artifacts-dir>
 ```
 
@@ -90,7 +91,7 @@ fullend chain <operationId> <specs-dir>
   StateDiag  states/gig.md:7                               diagram: gig → AcceptProposal
   StateDiag  states/proposal.md:6                          diagram: proposal → AcceptProposal
   FuncSpec   func/billing/hold_escrow.go:8                 @func billing.HoldEscrow
-  Gherkin    scenario/gig_lifecycle.feature:4              Scenario: Happy Path - Full Gig Lifecycle
+  Hurl       tests/scenario-gig-lifecycle.hurl:4           scenario: scenario-gig-lifecycle.hurl
 ```
 
 ### status
@@ -103,14 +104,14 @@ fullend status <specs-dir>
 
 ```
 SSOT Status:
-  OpenAPI      api/openapi.yaml               7 endpoints
-  DDL          db                             3 tables, 18 columns
-  SSaC         service                        7 functions
-  STML         frontend                       4 pages
-  States       states                         1 diagrams, 3 transitions
-  Policy       policy                         1 files, 5 rules
-  Scenario     scenario                       4 features, 5 scenarios
-  Func         func                           3 funcs
+  OpenAPI      api/openapi.yaml               12 endpoints
+  DDL          db                             4 tables, 23 columns
+  SSaC         service                        12 functions
+  STML         frontend                       2 pages
+  States       states                         2 diagrams, 7 transitions
+  Policy       policy                         1 files, 7 rules
+  Scenario     tests                          3 hurl files
+  Func         func                           2 funcs
 ```
 
 ## Default Functions (pkg/)
@@ -180,15 +181,14 @@ Individual tools (SSaC, STML) validate within their own layer. fullend catches m
 - **Policy ↔ SSaC** — @auth (action, resource) pairs match Rego allow rules
 - **Policy ↔ DDL** — @ownership table/column references exist in DDL
 - **Policy ↔ States** — state transition events with @auth have matching Rego rules
-- **Scenario ↔ OpenAPI** — operationIds, methods, and request fields match
-- **Scenario ↔ States** — step order follows state transition rules
+- **Hurl ↔ OpenAPI** — scenario/invariant tests reference valid endpoints
 - **Queue** — @publish topics match @subscribe functions, payload/message field consistency, queue config required
 - **Func ↔ SSaC** — @call references have matching implementations, arg count matches Request fields, positional types match (via DDL/OpenAPI), result/response consistency
 - **STML ↔ SSaC** (indirect) — both reference the same OpenAPI operationIds
 
 ## Runtime Testing
 
-`fullend gen` generates [Hurl](https://hurl.dev) tests from OpenAPI specs and Gherkin scenarios.
+`fullend gen` generates [Hurl](https://hurl.dev) tests from OpenAPI specs.
 
 ```bash
 # Start your server, then:
@@ -197,13 +197,16 @@ hurl --test --variable host=http://localhost:8080 artifacts/my-project/tests/*.h
 
 Generated tests include:
 - **smoke.hurl** — OpenAPI endpoint smoke tests (auto-generated)
-- **scenario-*.hurl** — Business scenario tests (from .feature files)
-- **invariant-*.hurl** — Cross-endpoint invariant tests (from .feature files)
 
-## Related Projects
+User-written tests (placed in `specs/<project>/tests/`):
+- **scenario-*.hurl** — Business scenario tests
+- **invariant-*.hurl** — Cross-endpoint invariant tests
 
-- [SSaC](https://github.com/geul-org/ssac) — Service Sequences as Code
-- [STML](https://github.com/geul-org/stml) — Semantic Template Markup Language
+## Architecture
+
+SSaC (parser/validator/generator) and STML (parser/validator/generator) are integrated into fullend as `internal/ssac/` and `internal/stml/`. The original [SSaC](https://github.com/geul-org/ssac) and [STML](https://github.com/geul-org/stml) repos are simple file-copy mirrors from fullend.
+
+All SSOTs are parsed once per CLI invocation via `ParseAll()` and shared across validate, gen, status, and chain pipelines.
 
 ## Acknowledgments
 

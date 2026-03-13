@@ -33,12 +33,3 @@ type UserModel interface {
 	FindByEmail(email string) (*User, error)
 	FindByID(id int64) (*User, error)
 }
-
-type QueryOpts struct {
-	Limit   int
-	Offset  int
-	Cursor  string
-	SortCol string
-	SortDir string
-	Filters map[string]string
-}

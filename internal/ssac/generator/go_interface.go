@@ -310,7 +310,7 @@ func deriveReturnType(mi validator.MethodInfo, usage modelUsage, hasQueryOpts bo
 	}
 }
 
-func renderInterfaces(interfaces []derivedInterface, needQueryOpts bool) []byte {
+func renderInterfaces(interfaces []derivedInterface) []byte {
 	var buf bytes.Buffer
 	buf.WriteString("package model\n\n")
 
@@ -342,18 +342,6 @@ func renderInterfaces(interfaces []derivedInterface, needQueryOpts bool) []byte 
 		buf.WriteString("}\n\n")
 	}
 
-	if needQueryOpts {
-		buf.WriteString(`type QueryOpts struct {
-	Limit   int
-	Offset  int
-	Cursor  string
-	SortCol string
-	SortDir string
-	Filters map[string]string
-}
-`)
-	}
-
 	return buf.Bytes()
 }
 
@@ -366,15 +354,6 @@ func renderParams(params []derivedParam) string {
 		parts = append(parts, p.Name+" "+p.GoType)
 	}
 	return strings.Join(parts, ", ")
-}
-
-func hasQueryOpts(st *validator.SymbolTable) bool {
-	for _, op := range st.Operations {
-		if op.HasQueryOpts() {
-			return true
-		}
-	}
-	return false
 }
 
 func needsPaginationImport(interfaces []derivedInterface) bool {
