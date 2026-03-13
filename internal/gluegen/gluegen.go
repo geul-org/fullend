@@ -506,12 +506,13 @@ func httpStatusConst(code string) string {
 }
 
 // buildFileToOperationID builds a map from generated .go filename to operationID.
-// SSaC generates files as snake_case(operationId).go.
+// SSaC parser sets FileName to the .ssac basename (e.g. "create_gig.ssac"),
+// so we convert to .go extension for lookup by the generated file.
 func buildFileToOperationID(funcs []ssacparser.ServiceFunc) map[string]string {
 	result := make(map[string]string)
 	for _, fn := range funcs {
-		// fn.FileName is already the generated filename (e.g. "create_gig.go")
-		result[fn.FileName] = fn.Name
+		key := strings.TrimSuffix(fn.FileName, ".ssac") + ".go"
+		result[key] = fn.Name
 	}
 	return result
 }
