@@ -148,6 +148,22 @@ func domainNeedsJWTSecret(serviceFuncs []ssacparser.ServiceFunc, domain string) 
 	return false
 }
 
+// domainNeedsDB checks if any service function in the domain has write sequences (post/put/delete).
+func domainNeedsDB(serviceFuncs []ssacparser.ServiceFunc, domain string) bool {
+	for _, fn := range serviceFuncs {
+		if fn.Domain != domain {
+			continue
+		}
+		for _, seq := range fn.Sequences {
+			switch seq.Type {
+			case ssacparser.SeqPost, ssacparser.SeqPut, ssacparser.SeqDelete:
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // generateDomainHandler creates service/{domain}/handler.go with the Handler struct.
 func generateDomainHandler(serviceDir, domain string, serviceFuncs []ssacparser.ServiceFunc, modulePath string) error {
 	domainDir := filepath.Join(serviceDir, domain)
@@ -157,13 +173,26 @@ func generateDomainHandler(serviceDir, domain string, serviceFuncs []ssacparser.
 
 	models := collectModelsForDomain(serviceFuncs, domain)
 	funcs := collectFuncsForDomain(serviceFuncs, domain)
+	needsDB := domainNeedsDB(serviceFuncs, domain)
 
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("package %s\n\n", domain))
-	b.WriteString(fmt.Sprintf("import \"%s/internal/model\"\n\n", modulePath))
+
+	if needsDB {
+		b.WriteString("import (\n")
+		b.WriteString("\t\"database/sql\"\n\n")
+		b.WriteString(fmt.Sprintf("\t\"%s/internal/model\"\n", modulePath))
+		b.WriteString(")\n\n")
+	} else {
+		b.WriteString(fmt.Sprintf("import \"%s/internal/model\"\n\n", modulePath))
+	}
 
 	b.WriteString("// Handler handles requests for the " + domain + " domain.\n")
 	b.WriteString("type Handler struct {\n")
+
+	if needsDB {
+		b.WriteString("\tDB *sql.DB\n")
+	}
 
 	for _, m := range models {
 		fieldName := ucFirst(lcFirst(m) + "Model")
@@ -399,6 +428,9 @@ func generateMainWithDomains(artifactsDir string, serviceFuncs []ssacparser.Serv
 		fieldName := ucFirst(domain)
 
 		var handlerLines []string
+		if domainNeedsDB(serviceFuncs, domain) {
+			handlerLines = append(handlerLines, "\t\t\tDB: conn,")
+		}
 		for _, m := range domainModels {
 			mFieldName := ucFirst(lcFirst(m) + "Model")
 			handlerLines = append(handlerLines, fmt.Sprintf("\t\t\t%s: model.New%sModel(conn),", mFieldName, m))

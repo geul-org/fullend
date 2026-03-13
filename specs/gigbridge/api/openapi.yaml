@@ -89,6 +89,12 @@ components:
           type: string
           format: date-time
 
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+
 paths:
   /auth/register:
     post:
@@ -147,6 +153,12 @@ paths:
                 properties:
                   AccessToken:
                     type: string
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /gigs:
     get:
@@ -231,6 +243,12 @@ paths:
                 properties:
                   gig:
                     $ref: '#/components/schemas/Gig'
+        '404':
+          description: Gig not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /gigs/{id}/publish:
     put:
@@ -255,6 +273,24 @@ paths:
                 properties:
                   gig:
                     $ref: '#/components/schemas/Gig'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Gig not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Cannot transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /gigs/{id}/proposals:
     post:
@@ -290,6 +326,18 @@ paths:
                 properties:
                   proposal:
                     $ref: '#/components/schemas/Proposal'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Gig not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /proposals/{id}/accept:
     post:
@@ -314,6 +362,24 @@ paths:
                 properties:
                   proposal:
                     $ref: '#/components/schemas/Proposal'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Cannot transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /proposals/{id}/reject:
     post:
@@ -338,6 +404,24 @@ paths:
                 properties:
                   proposal:
                     $ref: '#/components/schemas/Proposal'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Cannot transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /gigs/{id}/submit-work:
     post:
@@ -362,6 +446,24 @@ paths:
                 properties:
                   gig:
                     $ref: '#/components/schemas/Gig'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Gig not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Cannot transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /gigs/{id}/approve:
     post:
@@ -386,6 +488,24 @@ paths:
                 properties:
                   gig:
                     $ref: '#/components/schemas/Gig'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Gig not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Cannot transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /gigs/{id}/dispute:
     post:
@@ -410,3 +530,21 @@ paths:
                 properties:
                   gig:
                     $ref: '#/components/schemas/Gig'
+        '403':
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Gig not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Cannot transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'

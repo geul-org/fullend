@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -106,6 +107,9 @@ func Generate(input *GlueInput) error {
 	}
 	if err := generateFrontendSetup(input.ArtifactsDir, input.OpenAPIDoc, input.STMLDeps, input.STMLPages, input.STMLPageOps); err != nil {
 		return fmt.Errorf("frontend setup: %w", err)
+	}
+	if err := attachTSXDirectives(input.ArtifactsDir); err != nil {
+		return fmt.Errorf("tsx directives: %w", err)
 	}
 
 	// Hurl smoke test generation.
@@ -229,6 +233,8 @@ func transformSource(src string, models, funcs []string, modulePath string, xCon
 		funcName := extractFuncName(src)
 		if cfg, ok := xConfigs[funcName]; ok {
 			src = strings.ReplaceAll(src, "QueryOpts{}", "model.ParseQueryOpts(c, "+cfg+")")
+			// Remove SSaC-generated manual query parsing — ParseQueryOpts handles it all.
+			src = removeManualQueryParsing(src)
 		} else {
 			src = strings.ReplaceAll(src, "QueryOpts{}", "model.QueryOpts{}")
 		}
@@ -306,6 +312,23 @@ func extractFuncName(src string) string {
 		}
 	}
 	return ""
+}
+
+// removeManualQueryParsing removes SSaC-generated c.Query("limit/offset/sort/direction") blocks
+// that are redundant when ParseQueryOpts is used.
+func removeManualQueryParsing(src string) string {
+	patterns := []*regexp.Regexp{
+		// limit block
+		regexp.MustCompile(`\tif v := c\.Query\("limit"\); v != "" \{\n\t\topts\.Limit, _ = strconv\.Atoi\(v\)\n\t\}\n`),
+		// offset block
+		regexp.MustCompile(`\tif v := c\.Query\("offset"\); v != "" \{\n\t\topts\.Offset, _ = strconv\.Atoi\(v\)\n\t\}\n`),
+		// allowedSort + sort + direction block
+		regexp.MustCompile(`\tallowedSort := map\[string\]bool\{[^}]*\}\n\tif v := c\.Query\("sort"\); allowedSort\[v\] \{\n\t\topts\.SortCol = v\n\t\}\n\tif v := c\.Query\("direction"\); v == "asc" \|\| v == "desc" \{\n\t\topts\.SortDir = v\n\t\}\n`),
+	}
+	for _, re := range patterns {
+		src = re.ReplaceAllString(src, "")
+	}
+	return src
 }
 
 // extractXConfigs extracts x-pagination/x-sort/x-filter/x-include from OpenAPI operations.

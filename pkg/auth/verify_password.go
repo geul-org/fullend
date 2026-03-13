@@ -3,6 +3,7 @@ package auth
 import "golang.org/x/crypto/bcrypt"
 
 // @func verifyPassword
+// @error 401
 // @description 저장된 해시와 평문 비밀번호가 일치하는지 검증한다
 
 type VerifyPasswordRequest struct {

@@ -7,6 +7,7 @@ import (
 )
 
 // @func verifyToken
+// @error 401
 // @description JWT 토큰을 검증하고 claims를 추출한다
 
 type VerifyTokenRequest struct {

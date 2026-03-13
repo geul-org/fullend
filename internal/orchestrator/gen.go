@@ -10,6 +10,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 
 	"github.com/geul-org/fullend/internal/contract"
+	"github.com/geul-org/fullend/internal/funcspec"
 	"github.com/geul-org/fullend/internal/gluegen"
 	"github.com/geul-org/fullend/internal/policy"
 	"github.com/geul-org/fullend/internal/projectconfig"
@@ -302,6 +303,9 @@ func genSSaC(profile *TargetProfile, specsDir, serviceDir, artifactsDir string) 
 		return steps
 	}
 
+	// Inject @error annotations from func specs into SSaC symbol table.
+	injectFuncErrStatus(st, specsDir)
+
 	// Generate service functions → backend/internal/service/
 	serviceOutDir := filepath.Join(artifactsDir, "backend", "internal", "service")
 	if err := os.MkdirAll(serviceOutDir, 0755); err != nil {
@@ -346,6 +350,43 @@ func genSSaC(profile *TargetProfile, specsDir, serviceDir, artifactsDir string) 
 	steps = append(steps, modelStep)
 
 	return steps
+}
+
+// injectFuncErrStatus loads func specs from both fullend pkg/ and project func/,
+// then registers @error annotations into the SSaC symbol table so that
+// @call codegen uses the correct HTTP error status code.
+func injectFuncErrStatus(st *ssacvalidator.SymbolTable, specsDir string) {
+	var allSpecs []funcspec.FuncSpec
+
+	// fullend default pkg/
+	if pkgRoot := findFullendPkgRoot(); pkgRoot != "" {
+		if specs, err := funcspec.ParseDir(pkgRoot); err == nil {
+			allSpecs = append(allSpecs, specs...)
+		}
+	}
+
+	// project custom func/
+	funcDir := filepath.Join(specsDir, "func")
+	if specs, err := funcspec.ParseDir(funcDir); err == nil {
+		allSpecs = append(allSpecs, specs...)
+	}
+
+	for _, fs := range allSpecs {
+		if fs.ErrStatus == 0 || fs.Package == "" {
+			continue
+		}
+		// Register as "pkg._func" model key (matches SSaC convention).
+		modelKey := fs.Package + "._func"
+		ms, exists := st.Models[modelKey]
+		if !exists {
+			ms = ssacvalidator.ModelSymbol{Methods: make(map[string]ssacvalidator.MethodInfo)}
+		}
+		funcName := strings.ToUpper(fs.Name[:1]) + fs.Name[1:]
+		mi := ms.Methods[funcName]
+		mi.ErrStatus = fs.ErrStatus
+		ms.Methods[funcName] = mi
+		st.Models[modelKey] = ms
+	}
 }
 
 func genSTML(profile *TargetProfile, specsDir, frontendDir, artifactsDir string) (reporter.StepResult, map[string]string, []string, map[string]string) {

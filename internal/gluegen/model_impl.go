@@ -259,6 +259,19 @@ func generateModelFile(modelDir string, modelName string, methods []ifaceMethod,
 	// Struct definition.
 	b.WriteString(fmt.Sprintf("type %s struct {\n", implName))
 	b.WriteString("\tdb *sql.DB\n")
+	b.WriteString("\ttx *sql.Tx\n")
+	b.WriteString("}\n\n")
+
+	// conn() helper — returns tx if set, otherwise db.
+	b.WriteString(fmt.Sprintf("func (m *%s) conn() interface {\n", implName))
+	b.WriteString("\tExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)\n")
+	b.WriteString("\tQueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)\n")
+	b.WriteString("\tQueryRowContext(ctx context.Context, query string, args ...any) *sql.Row\n")
+	b.WriteString("} {\n")
+	b.WriteString("\tif m.tx != nil {\n")
+	b.WriteString("\t\treturn m.tx\n")
+	b.WriteString("\t}\n")
+	b.WriteString("\treturn m.db\n")
 	b.WriteString("}\n\n")
 
 	// Constructor.
@@ -325,6 +338,14 @@ func generateScanFunc(b *strings.Builder, modelName string, table *ddlTable) {
 
 // generateMethodFromIface writes a single method implementation based on the interface signature.
 func generateMethodFromIface(b *strings.Builder, implName, modelName string, m ifaceMethod, query *sqlcQuery, seqType string, table *ddlTable, includes []includeMapping) {
+	// WithTx special case: return new impl with tx set.
+	if m.Name == "WithTx" {
+		b.WriteString(fmt.Sprintf("func (m *%s) WithTx(tx *sql.Tx) %sModel {\n", implName, modelName))
+		b.WriteString(fmt.Sprintf("\treturn &%s{db: m.db, tx: tx}\n", implName))
+		b.WriteString("}\n")
+		return
+	}
+
 	sqlStr := "-- TODO: " + m.Name
 	if query != nil && query.SQL != "" {
 		sqlStr = query.SQL
@@ -418,7 +439,7 @@ func generateMethodFromIface(b *strings.Builder, implName, modelName string, m i
 			b.WriteString("\tcountArgs = append(baseArgs, countArgs...)\n")
 		}
 		b.WriteString("\tvar total int64\n")
-		b.WriteString("\tif err := m.db.QueryRowContext(context.Background(), countSQL, countArgs...).Scan(&total); err != nil {\n")
+		b.WriteString("\tif err := m.conn().QueryRowContext(context.Background(), countSQL, countArgs...).Scan(&total); err != nil {\n")
 		b.WriteString("\t\treturn nil, err\n")
 		b.WriteString("\t}\n\n")
 
@@ -427,7 +448,7 @@ func generateMethodFromIface(b *strings.Builder, implName, modelName string, m i
 		if len(callArgNames) > 0 {
 			b.WriteString("\tselectArgs = append(baseArgs, selectArgs...)\n")
 		}
-		b.WriteString("\trows, err := m.db.QueryContext(context.Background(), selectSQL, selectArgs...)\n")
+		b.WriteString("\trows, err := m.conn().QueryContext(context.Background(), selectSQL, selectArgs...)\n")
 		b.WriteString("\tif err != nil {\n")
 		b.WriteString("\t\treturn nil, err\n")
 		b.WriteString("\t}\n")
@@ -457,7 +478,7 @@ func generateMethodFromIface(b *strings.Builder, implName, modelName string, m i
 	case isSliceReturn:
 		// Multi-row query without pagination: ([]Type, error)
 		b.WriteString(fmt.Sprintf("func (m *%s) %s(%s) %s {\n", implName, m.Name, m.ParamSig, m.ReturnSig))
-		b.WriteString(fmt.Sprintf("\trows, err := m.db.QueryContext(context.Background(),\n\t\t%q%s)\n", sqlStr, callArgs))
+		b.WriteString(fmt.Sprintf("\trows, err := m.conn().QueryContext(context.Background(),\n\t\t%q%s)\n", sqlStr, callArgs))
 		b.WriteString("\tif err != nil {\n")
 		b.WriteString("\t\treturn nil, err\n")
 		b.WriteString("\t}\n")
@@ -476,7 +497,7 @@ func generateMethodFromIface(b *strings.Builder, implName, modelName string, m i
 	case isFind || seqType == "get":
 		// Find method: (*Type, error)
 		b.WriteString(fmt.Sprintf("func (m *%s) %s(%s) %s {\n", implName, m.Name, m.ParamSig, m.ReturnSig))
-		b.WriteString(fmt.Sprintf("\trow := m.db.QueryRowContext(context.Background(),\n\t\t%q%s)\n", sqlStr, callArgs))
+		b.WriteString(fmt.Sprintf("\trow := m.conn().QueryRowContext(context.Background(),\n\t\t%q%s)\n", sqlStr, callArgs))
 		b.WriteString(fmt.Sprintf("\tv, err := scan%s(row)\n", modelName))
 		b.WriteString("\tif err != nil {\n")
 		b.WriteString("\t\tif err == sql.ErrNoRows {\n")
@@ -490,14 +511,14 @@ func generateMethodFromIface(b *strings.Builder, implName, modelName string, m i
 	case seqType == "post":
 		// Create method: (*Type, error)
 		b.WriteString(fmt.Sprintf("func (m *%s) %s(%s) %s {\n", implName, m.Name, m.ParamSig, m.ReturnSig))
-		b.WriteString(fmt.Sprintf("\trow := m.db.QueryRowContext(context.Background(),\n\t\t%q%s)\n", sqlStr, callArgs))
+		b.WriteString(fmt.Sprintf("\trow := m.conn().QueryRowContext(context.Background(),\n\t\t%q%s)\n", sqlStr, callArgs))
 		b.WriteString(fmt.Sprintf("\treturn scan%s(row)\n", modelName))
 		b.WriteString("}\n")
 
 	case seqType == "put" || seqType == "delete":
 		// Update/Delete: error
 		b.WriteString(fmt.Sprintf("func (m *%s) %s(%s) %s {\n", implName, m.Name, m.ParamSig, m.ReturnSig))
-		b.WriteString(fmt.Sprintf("\t_, err := m.db.ExecContext(context.Background(),\n\t\t%q%s)\n", sqlStr, callArgs))
+		b.WriteString(fmt.Sprintf("\t_, err := m.conn().ExecContext(context.Background(),\n\t\t%q%s)\n", sqlStr, callArgs))
 		b.WriteString("\treturn err\n")
 		b.WriteString("}\n")
 
@@ -505,12 +526,12 @@ func generateMethodFromIface(b *strings.Builder, implName, modelName string, m i
 		// Custom/unknown: determine from query cardinality or default to exec.
 		if query != nil && query.Cardinality == "one" {
 			b.WriteString(fmt.Sprintf("func (m *%s) %s(%s) %s {\n", implName, m.Name, m.ParamSig, m.ReturnSig))
-			b.WriteString(fmt.Sprintf("\trow := m.db.QueryRowContext(context.Background(),\n\t\t%q%s)\n", sqlStr, callArgs))
+			b.WriteString(fmt.Sprintf("\trow := m.conn().QueryRowContext(context.Background(),\n\t\t%q%s)\n", sqlStr, callArgs))
 			b.WriteString(fmt.Sprintf("\treturn scan%s(row)\n", modelName))
 			b.WriteString("}\n")
 		} else {
 			b.WriteString(fmt.Sprintf("func (m *%s) %s(%s) %s {\n", implName, m.Name, m.ParamSig, m.ReturnSig))
-			b.WriteString(fmt.Sprintf("\t_, err := m.db.ExecContext(context.Background(),\n\t\t%q%s)\n", sqlStr, callArgs))
+			b.WriteString(fmt.Sprintf("\t_, err := m.conn().ExecContext(context.Background(),\n\t\t%q%s)\n", sqlStr, callArgs))
 			b.WriteString("\treturn err\n")
 			b.WriteString("}\n")
 		}
@@ -891,7 +912,7 @@ func generateIncludeHelper(b *strings.Builder, implName, modelName string, inc i
 	b.WriteString("\tkeys := collectInt64s(ids)\n")
 	b.WriteString("\tplaceholders := buildPlaceholders(len(keys))\n")
 	b.WriteString("\targs := int64sToArgs(keys)\n")
-	b.WriteString(fmt.Sprintf("\trows, err := m.db.QueryContext(context.Background(),\n\t\t\"SELECT * FROM %s WHERE id IN (\"+placeholders+\")\", args...)\n", inc.TargetTable))
+	b.WriteString(fmt.Sprintf("\trows, err := m.conn().QueryContext(context.Background(),\n\t\t\"SELECT * FROM %s WHERE id IN (\"+placeholders+\")\", args...)\n", inc.TargetTable))
 	b.WriteString("\tif err != nil {\n")
 	b.WriteString("\t\treturn err\n")
 	b.WriteString("\t}\n")

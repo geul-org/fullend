@@ -52,7 +52,7 @@ func HashServiceFunc(sf ssacparser.ServiceFunc) string {
 	}
 	parts = append(parts, strings.Join(respFields, ","))
 
-	return hash7(strings.Join(parts, "|"))
+	return Hash7(strings.Join(parts, "|"))
 }
 
 // HashModelMethod computes a contract hash for a model implementation method.
@@ -61,7 +61,7 @@ func HashModelMethod(name string, params []string, returns []string) string {
 	parts := []string{name}
 	parts = append(parts, strings.Join(params, ","))
 	parts = append(parts, strings.Join(returns, ","))
-	return hash7(strings.Join(parts, "|"))
+	return Hash7(strings.Join(parts, "|"))
 }
 
 // HashStateDiagram computes a contract hash for a state machine.
@@ -81,7 +81,7 @@ func HashStateDiagram(sd *statemachine.StateDiagram) string {
 	sort.Strings(transitions)
 	parts = append(parts, strings.Join(transitions, ","))
 
-	return hash7(strings.Join(parts, "|"))
+	return Hash7(strings.Join(parts, "|"))
 }
 
 // HashClaims computes a contract hash for middleware claims (CurrentUser).
@@ -97,11 +97,12 @@ func HashClaims(claims map[string]string) string {
 	for _, k := range keys {
 		parts = append(parts, k+":"+claims[k])
 	}
-	return hash7(strings.Join(parts, ","))
+	return Hash7(strings.Join(parts, ","))
 }
 
 // hash7 returns the first 7 hex characters of SHA256.
-func hash7(input string) string {
+// Hash7 computes a 7-character SHA-256 hash.
+func Hash7(input string) string {
 	h := sha256.Sum256([]byte(input))
 	return fmt.Sprintf("%x", h)[:7]
 }

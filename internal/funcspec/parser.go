@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"io/fs"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/ettle/strcase"
@@ -17,6 +18,7 @@ type FuncSpec struct {
 	Package        string   // "auth"
 	Name           string   // "hashPassword"
 	Description    string   // @description value
+	ErrStatus      int      // @error HTTP status code (0 = unspecified)
 	RequestFields  []Field  // FuncNameRequest struct fields
 	ResponseFields []Field  // FuncNameResponse struct fields
 	HasBody        bool     // true if function body is not just "// TODO: implement"
@@ -74,6 +76,10 @@ func ParseFile(path string) (*FuncSpec, error) {
 			line = strings.TrimSpace(line)
 			if strings.HasPrefix(line, "@func ") {
 				spec.Name = strings.TrimSpace(strings.TrimPrefix(line, "@func "))
+			} else if strings.HasPrefix(line, "@error ") {
+				if code, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "@error "))); err == nil {
+					spec.ErrStatus = code
+				}
 			} else if strings.HasPrefix(line, "@description ") {
 				spec.Description = strings.TrimSpace(strings.TrimPrefix(line, "@description "))
 			}

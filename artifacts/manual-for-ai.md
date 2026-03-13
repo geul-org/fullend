@@ -275,6 +275,23 @@ func HoldEscrow(req HoldEscrowRequest) (HoldEscrowResponse, error) {
 }
 ```
 
+### @error Annotation
+
+`// @error NNN` declares the default HTTP error status code when `@call` fails. SSaC reads this annotation during code generation.
+
+```go
+// @func verifyPassword
+// @error 401
+// @description 저장된 해시와 평문 비밀번호가 일치하는지 검증한다
+
+func VerifyPassword(req VerifyPasswordRequest) (VerifyPasswordResponse, error) { ... }
+```
+
+**Priority** (highest → lowest):
+1. `.ssac` explicit: `@call auth.VerifyPassword({...}) 500` → 500
+2. `@error` annotation: `// @error 401` → 401
+3. Default → 500
+
 SSaC reference: `// @call billing.HoldEscrowResponse r = billing.HoldEscrow({GigID: gig.ID, Amount: gig.Budget, ClientID: gig.ClientID})`
 
 ### Purity Rule
@@ -292,14 +309,14 @@ SSaC reference: `// @call billing.HoldEscrowResponse r = billing.HoldEscrow({Gig
 
 #### auth
 
-| Function | Request Fields | Response Fields |
-|---|---|---|
-| `hashPassword` | `Password` | `HashedPassword` |
-| `verifyPassword` | `PasswordHash`, `Password` | (none) |
-| `issueToken` | `UserID`, `Email`, `Role` | `AccessToken` |
-| `verifyToken` | `Token`, `Secret` | `UserID`, `Email`, `Role` |
-| `refreshToken` | `UserID`, `Email`, `Role` | `RefreshToken` |
-| `generateResetToken` | (none) | `Token` |
+| Function | Request Fields | Response Fields | @error |
+|---|---|---|---|
+| `hashPassword` | `Password` | `HashedPassword` | — |
+| `verifyPassword` | `PasswordHash`, `Password` | (none) | 401 |
+| `issueToken` | `UserID`, `Email`, `Role` | `AccessToken` | — |
+| `verifyToken` | `Token`, `Secret` | `UserID`, `Email`, `Role` | 401 |
+| `refreshToken` | `UserID`, `Email`, `Role` | `RefreshToken` | — |
+| `generateResetToken` | (none) | `Token` | — |
 
 #### crypto
 
