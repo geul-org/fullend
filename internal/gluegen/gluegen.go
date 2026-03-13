@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -53,13 +52,13 @@ func Generate(input *GlueInput) error {
 	}
 
 	models := collectModels(input.ServiceFuncs)
-	xConfigs := extractXConfigs(input.OpenAPIDoc)
+
 
 	if hasDomains(input.ServiceFuncs) {
 		// Domain mode: per-domain Handler + central Server.
 		allFuncs := collectFuncs(input.ServiceFuncs)
 
-		if err := transformServiceFilesWithDomains(intDir, input.ServiceFuncs, models, allFuncs, input.ModulePath, xConfigs); err != nil {
+		if err := transformServiceFilesWithDomains(intDir, input.ServiceFuncs, models, allFuncs, input.ModulePath); err != nil {
 			return fmt.Errorf("service transform (domain): %w", err)
 		}
 		if err := attachServiceDirectives(intDir, input.ServiceFuncs); err != nil {
@@ -83,7 +82,7 @@ func Generate(input *GlueInput) error {
 		// Flat mode: single Server with all fields (unchanged).
 		funcs := collectFuncs(input.ServiceFuncs)
 
-		if err := transformServiceFiles(intDir, models, funcs, input.ModulePath, xConfigs); err != nil {
+		if err := transformServiceFiles(intDir, models, funcs, input.ModulePath); err != nil {
 			return fmt.Errorf("service transform: %w", err)
 		}
 		if err := attachServiceDirectives(intDir, input.ServiceFuncs); err != nil {
@@ -168,7 +167,7 @@ func collectFuncs(funcs []ssacparser.ServiceFunc) []string {
 
 // transformServiceFiles reads each .go file in internal/service/,
 // converts standalone functions to Server methods, and writes them back in place.
-func transformServiceFiles(intDir string, models, funcs []string, modulePath string, xConfigs map[string]string) error {
+func transformServiceFiles(intDir string, models, funcs []string, modulePath string) error {
 	serviceDir := filepath.Join(intDir, "service")
 	entries, err := os.ReadDir(serviceDir)
 	if err != nil {
@@ -188,8 +187,8 @@ func transformServiceFiles(intDir string, models, funcs []string, modulePath str
 			return err
 		}
 
-		transformed := transformSource(string(src), models, funcs, modulePath, xConfigs, false)
-		if err := os.WriteFile(path, []byte(transformed), 0644); err != nil {
+		transformed := transformSource(string(src), models, funcs, modulePath, false)
+	if err := os.WriteFile(path, []byte(transformed), 0644); err != nil {
 			return err
 		}
 	}
@@ -199,7 +198,7 @@ func transformServiceFiles(intDir string, models, funcs []string, modulePath str
 
 // transformSource converts a standalone function source to a struct method.
 // isDomain: false → (s *Server) receiver, true → (h *Handler) receiver.
-func transformSource(src string, models, funcs []string, modulePath string, xConfigs map[string]string, isDomain bool) string {
+func transformSource(src string, models, funcs []string, modulePath string, isDomain bool) string {
 	rcv := "s"
 	rcvType := "*Server"
 	if isDomain {
@@ -228,19 +227,7 @@ func transformSource(src string, models, funcs []string, modulePath string, xCon
 		src = strings.ReplaceAll(src, f+"(", rcv+"."+fieldName+"(")
 	}
 
-	// Qualify model package types used in service code.
-	if strings.Contains(src, "QueryOpts{}") {
-		funcName := extractFuncName(src)
-		if cfg, ok := xConfigs[funcName]; ok {
-			src = strings.ReplaceAll(src, "QueryOpts{}", "model.ParseQueryOpts(c, "+cfg+")")
-			// Remove SSaC-generated manual query parsing — ParseQueryOpts handles it all.
-			src = removeManualQueryParsing(src)
-		} else {
-			src = strings.ReplaceAll(src, "QueryOpts{}", "model.QueryOpts{}")
-		}
-	}
-
-	// Add model import when model package types are used (QueryOpts, CurrentUser, etc.)
+	// Add model import when model package types are used (QueryOpts, ParseQueryOpts, CurrentUser, etc.)
 	needsModel := strings.Contains(src, "model.QueryOpts") || strings.Contains(src, "model.ParseQueryOpts") || strings.Contains(src, "*model.CurrentUser")
 	if needsModel {
 		modelImport := fmt.Sprintf("\"%s/internal/model\"", modulePath)
@@ -295,102 +282,6 @@ func transformSource(src string, models, funcs []string, modulePath string, xCon
 	return src
 }
 
-// extractFuncName extracts the function name from Go source.
-func extractFuncName(src string) string {
-	for _, prefix := range []string{"func (s *Server) ", "func (h *Handler) "} {
-		if idx := strings.Index(src, prefix); idx >= 0 {
-			rest := src[idx+len(prefix):]
-			if parenIdx := strings.Index(rest, "("); parenIdx > 0 {
-				return rest[:parenIdx]
-			}
-		}
-	}
-	if idx := strings.Index(src, "\nfunc "); idx >= 0 {
-		rest := src[idx+len("\nfunc "):]
-		if parenIdx := strings.Index(rest, "("); parenIdx > 0 {
-			return rest[:parenIdx]
-		}
-	}
-	return ""
-}
-
-// removeManualQueryParsing removes SSaC-generated c.Query("limit/offset/sort/direction") blocks
-// that are redundant when ParseQueryOpts is used.
-func removeManualQueryParsing(src string) string {
-	patterns := []*regexp.Regexp{
-		// limit block
-		regexp.MustCompile(`\tif v := c\.Query\("limit"\); v != "" \{\n\t\topts\.Limit, _ = strconv\.Atoi\(v\)\n\t\}\n`),
-		// offset block
-		regexp.MustCompile(`\tif v := c\.Query\("offset"\); v != "" \{\n\t\topts\.Offset, _ = strconv\.Atoi\(v\)\n\t\}\n`),
-		// allowedSort + sort + direction block
-		regexp.MustCompile(`\tallowedSort := map\[string\]bool\{[^}]*\}\n\tif v := c\.Query\("sort"\); allowedSort\[v\] \{\n\t\topts\.SortCol = v\n\t\}\n\tif v := c\.Query\("direction"\); v == "asc" \|\| v == "desc" \{\n\t\topts\.SortDir = v\n\t\}\n`),
-	}
-	for _, re := range patterns {
-		src = re.ReplaceAllString(src, "")
-	}
-	return src
-}
-
-// extractXConfigs extracts x-pagination/x-sort/x-filter/x-include from OpenAPI operations.
-// Returns map[operationId] → Go literal string for model.QueryOptsConfig{...}.
-func extractXConfigs(doc *openapi3.T) map[string]string {
-	result := make(map[string]string)
-	if doc == nil || doc.Paths == nil {
-		return result
-	}
-
-	for _, pathItem := range doc.Paths.Map() {
-		for _, op := range pathItem.Operations() {
-			if op.OperationID == "" {
-				continue
-			}
-			cfg := buildQueryOptsConfig(op)
-			if cfg != "" {
-				result[op.OperationID] = cfg
-			}
-		}
-	}
-	return result
-}
-
-// buildQueryOptsConfig builds a model.QueryOptsConfig{...} Go literal from operation extensions.
-func buildQueryOptsConfig(op *openapi3.Operation) string {
-	var parts []string
-
-	if pag := getExtMap(op, "x-pagination"); pag != nil {
-		style := getStr(pag, "style", "offset")
-		defaultLimit := getInt(pag, "defaultLimit", 20)
-		maxLimit := getInt(pag, "maxLimit", 100)
-		parts = append(parts, fmt.Sprintf(
-			"Pagination: &model.PaginationConfig{Style: %q, DefaultLimit: %d, MaxLimit: %d}",
-			style, defaultLimit, maxLimit))
-	}
-
-	if sortCfg := getExtMap(op, "x-sort"); sortCfg != nil {
-		allowed := getStrSlice(sortCfg, "allowed")
-		def := getStr(sortCfg, "default", "")
-		dir := getStr(sortCfg, "direction", "asc")
-		parts = append(parts, fmt.Sprintf(
-			"Sort: &model.SortConfig{Allowed: []string{%s}, Default: %q, Direction: %q}",
-			quotedJoin(allowed), def, dir))
-	}
-
-	if filterCfg := getExtMap(op, "x-filter"); filterCfg != nil {
-		allowed := getStrSlice(filterCfg, "allowed")
-		parts = append(parts, fmt.Sprintf(
-			"Filter: &model.FilterConfig{Allowed: []string{%s}}",
-			quotedJoin(allowed)))
-	}
-
-	// x-include is codegen metadata only — not a runtime query parameter.
-
-	if len(parts) == 0 {
-		return ""
-	}
-
-	return "model.QueryOptsConfig{" + strings.Join(parts, ", ") + "}"
-}
-
 // getExtMap extracts a map extension value from an OpenAPI operation.
 func getExtMap(op *openapi3.Operation, key string) map[string]interface{} {
 	if op.Extensions == nil {
@@ -420,23 +311,6 @@ func getStr(m map[string]interface{}, key, def string) string {
 	return def
 }
 
-// getInt extracts an int value from a map with a default.
-func getInt(m map[string]interface{}, key string, def int) int {
-	v, ok := m[key]
-	if !ok {
-		return def
-	}
-	switch n := v.(type) {
-	case float64:
-		return int(n)
-	case int:
-		return n
-	case int64:
-		return int(n)
-	}
-	return def
-}
-
 // getStrSlice extracts a string slice from a map.
 func getStrSlice(m map[string]interface{}, key string) []string {
 	v, ok := m[key]
@@ -454,15 +328,6 @@ func getStrSlice(m map[string]interface{}, key string) []string {
 		}
 	}
 	return result
-}
-
-// quotedJoin joins strings as quoted Go string literals.
-func quotedJoin(ss []string) string {
-	quoted := make([]string, len(ss))
-	for i, s := range ss {
-		quoted[i] = fmt.Sprintf("%q", s)
-	}
-	return strings.Join(quoted, ", ")
 }
 
 // hasBearerScheme checks if the OpenAPI doc has a bearerAuth security scheme.
