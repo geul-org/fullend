@@ -53,6 +53,11 @@ func CheckSSaCOpenAPI(funcs []ssacparser.ServiceFunc, st *ssacvalidator.SymbolTa
 		errs = append(errs, checkErrStatus(funcs, doc)...)
 	}
 
+	// Rule 8: SSaC @response → OpenAPI must have explicit 2xx response code.
+	if doc != nil {
+		errs = append(errs, checkResponseSuccessCode(funcs, doc)...)
+	}
+
 	return errs
 }
 
@@ -194,6 +199,65 @@ func codeToInt(code string) int {
 	default:
 		return 0
 	}
+}
+
+// checkResponseSuccessCode validates that SSaC functions with @response have an explicit 2xx response code in OpenAPI.
+// "default"-only responses are not accepted — the OpenAPI spec must explicitly declare 200, 201, 204, etc.
+func checkResponseSuccessCode(funcs []ssacparser.ServiceFunc, doc *openapi3.T) []CrossError {
+	var errs []CrossError
+
+	// Build operationId → operation map.
+	opMap := make(map[string]*openapi3.Operation)
+	if doc.Paths != nil {
+		for _, pathItem := range doc.Paths.Map() {
+			for _, op := range []*openapi3.Operation{
+				pathItem.Get, pathItem.Post, pathItem.Put,
+				pathItem.Delete, pathItem.Patch,
+			} {
+				if op != nil && op.OperationID != "" {
+					opMap[op.OperationID] = op
+				}
+			}
+		}
+	}
+
+	for _, fn := range funcs {
+		hasResponse := false
+		for _, seq := range fn.Sequences {
+			if seq.Type == "response" {
+				hasResponse = true
+				break
+			}
+		}
+		if !hasResponse {
+			continue
+		}
+
+		op := opMap[fn.Name]
+		if op == nil || op.Responses == nil {
+			continue // no matching operation — already caught by Rule 3
+		}
+
+		// Check for explicit 2xx response code.
+		has2xx := false
+		for code := range op.Responses.Map() {
+			if len(code) == 3 && code[0] == '2' {
+				has2xx = true
+				break
+			}
+		}
+
+		if !has2xx {
+			errs = append(errs, CrossError{
+				Rule:       "SSaC @response → OpenAPI 2xx",
+				Context:    fmt.Sprintf("%s:%s", fn.FileName, fn.Name),
+				Message:    fmt.Sprintf("SSaC @response가 있는 %s에 OpenAPI 2xx 성공 응답 코드가 없습니다 (default만으로는 불충분)", fn.Name),
+				Suggestion: fmt.Sprintf("OpenAPI %s responses에 200, 201, 204 등 명시적 성공 코드를 추가하세요", fn.Name),
+			})
+		}
+	}
+
+	return errs
 }
 
 // errStatusTypes are the SSaC sequence types that support custom ErrStatus.

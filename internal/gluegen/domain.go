@@ -14,8 +14,11 @@ import (
 )
 
 // transformServiceFilesWithDomains transforms service files in both flat and domain subdirectories.
-func transformServiceFilesWithDomains(intDir string, serviceFuncs []ssacparser.ServiceFunc, models, funcs []string, modulePath string) error {
+func transformServiceFilesWithDomains(intDir string, serviceFuncs []ssacparser.ServiceFunc, models, funcs []string, modulePath string, doc *openapi3.T) error {
 	serviceDir := filepath.Join(intDir, "service")
+
+	// Build filename → operationID mapping from SSaC service funcs.
+	fileToOpID := buildFileToOperationID(serviceFuncs)
 
 	// Transform flat files (Domain="") directly in serviceDir.
 	entries, err := os.ReadDir(serviceDir)
@@ -31,7 +34,8 @@ func transformServiceFilesWithDomains(intDir string, serviceFuncs []ssacparser.S
 		if err != nil {
 			return err
 		}
-		transformed := transformSource(string(src), models, funcs, modulePath, false)
+		opID := fileToOpID[entry.Name()]
+		transformed := transformSource(string(src), models, funcs, modulePath, false, doc, opID)
 		if err := os.WriteFile(path, []byte(transformed), 0644); err != nil {
 			return err
 		}
@@ -57,7 +61,8 @@ func transformServiceFilesWithDomains(intDir string, serviceFuncs []ssacparser.S
 			if err != nil {
 				return err
 			}
-			transformed := transformSource(string(src), models, funcs, modulePath, true)
+			opID := fileToOpID[entry.Name()]
+			transformed := transformSource(string(src), models, funcs, modulePath, true, doc, opID)
 			if err := os.WriteFile(path, []byte(transformed), 0644); err != nil {
 				return err
 			}

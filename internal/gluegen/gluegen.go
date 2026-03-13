@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -58,7 +59,7 @@ func Generate(input *GlueInput) error {
 		// Domain mode: per-domain Handler + central Server.
 		allFuncs := collectFuncs(input.ServiceFuncs)
 
-		if err := transformServiceFilesWithDomains(intDir, input.ServiceFuncs, models, allFuncs, input.ModulePath); err != nil {
+		if err := transformServiceFilesWithDomains(intDir, input.ServiceFuncs, models, allFuncs, input.ModulePath, input.OpenAPIDoc); err != nil {
 			return fmt.Errorf("service transform (domain): %w", err)
 		}
 		if err := attachServiceDirectives(intDir, input.ServiceFuncs); err != nil {
@@ -82,7 +83,7 @@ func Generate(input *GlueInput) error {
 		// Flat mode: single Server with all fields (unchanged).
 		funcs := collectFuncs(input.ServiceFuncs)
 
-		if err := transformServiceFiles(intDir, models, funcs, input.ModulePath); err != nil {
+		if err := transformServiceFiles(intDir, models, funcs, input.ModulePath, input.OpenAPIDoc, input.ServiceFuncs); err != nil {
 			return fmt.Errorf("service transform: %w", err)
 		}
 		if err := attachServiceDirectives(intDir, input.ServiceFuncs); err != nil {
@@ -167,7 +168,7 @@ func collectFuncs(funcs []ssacparser.ServiceFunc) []string {
 
 // transformServiceFiles reads each .go file in internal/service/,
 // converts standalone functions to Server methods, and writes them back in place.
-func transformServiceFiles(intDir string, models, funcs []string, modulePath string) error {
+func transformServiceFiles(intDir string, models, funcs []string, modulePath string, doc *openapi3.T, serviceFuncs []ssacparser.ServiceFunc) error {
 	serviceDir := filepath.Join(intDir, "service")
 	entries, err := os.ReadDir(serviceDir)
 	if err != nil {
@@ -176,6 +177,9 @@ func transformServiceFiles(intDir string, models, funcs []string, modulePath str
 		}
 		return err
 	}
+
+	// Build filename → operationID mapping from SSaC service funcs.
+	fileToOpID := buildFileToOperationID(serviceFuncs)
 
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
@@ -187,8 +191,9 @@ func transformServiceFiles(intDir string, models, funcs []string, modulePath str
 			return err
 		}
 
-		transformed := transformSource(string(src), models, funcs, modulePath, false)
-	if err := os.WriteFile(path, []byte(transformed), 0644); err != nil {
+		opID := fileToOpID[entry.Name()]
+		transformed := transformSource(string(src), models, funcs, modulePath, false, doc, opID)
+		if err := os.WriteFile(path, []byte(transformed), 0644); err != nil {
 			return err
 		}
 	}
@@ -198,7 +203,8 @@ func transformServiceFiles(intDir string, models, funcs []string, modulePath str
 
 // transformSource converts a standalone function source to a struct method.
 // isDomain: false → (s *Server) receiver, true → (h *Handler) receiver.
-func transformSource(src string, models, funcs []string, modulePath string, isDomain bool) string {
+// doc + operationID: used to replace __RESPONSE_STATUS__ with OpenAPI success code.
+func transformSource(src string, models, funcs []string, modulePath string, isDomain bool, doc *openapi3.T, operationID string) string {
 	rcv := "s"
 	rcvType := "*Server"
 	if isDomain {
@@ -275,6 +281,20 @@ func transformSource(src string, models, funcs []string, modulePath string, isDo
 					src = strings.ReplaceAll(src, ", "+varName+")", ", "+varName+".(string))")
 					src = strings.ReplaceAll(src, "("+varName+",", "("+varName+".(string),")
 				}
+			}
+		}
+	}
+
+	// Replace __RESPONSE_STATUS__ with OpenAPI success code.
+	if strings.Contains(src, "__RESPONSE_STATUS__") && doc != nil && operationID != "" {
+		statusConst := resolveSuccessStatus(doc, operationID)
+		if statusConst != "" {
+			if statusConst == "http.StatusNoContent" {
+				// 204: replace entire c.JSON(__RESPONSE_STATUS__, ...) with c.Status(http.StatusNoContent)
+				re := regexp.MustCompile(`c\.JSON\(__RESPONSE_STATUS__,\s*[^)]+\)`)
+				src = re.ReplaceAllString(src, "c.Status(http.StatusNoContent)")
+			} else {
+				src = strings.ReplaceAll(src, "__RESPONSE_STATUS__", statusConst)
 			}
 		}
 	}
@@ -444,6 +464,56 @@ func domainNeedsAuth(funcs []ssacparser.ServiceFunc, domain string) bool {
 // lcFirst converts to camelCase (lowercases the first character with Go initialism handling).
 func lcFirst(s string) string {
 	return strcase.ToGoCamel(s)
+}
+
+// resolveSuccessStatus finds the 2xx success response code for an operationId in OpenAPI
+// and returns the corresponding Go http.Status constant. Returns "" if not found.
+func resolveSuccessStatus(doc *openapi3.T, operationID string) string {
+	if doc == nil || doc.Paths == nil {
+		return ""
+	}
+	for _, pi := range doc.Paths.Map() {
+		for _, op := range pi.Operations() {
+			if op.OperationID != operationID {
+				continue
+			}
+			if op.Responses == nil {
+				return ""
+			}
+			for code := range op.Responses.Map() {
+				if len(code) == 3 && code[0] == '2' {
+					return httpStatusConst(code)
+				}
+			}
+			return ""
+		}
+	}
+	return ""
+}
+
+// httpStatusConst converts a numeric HTTP status code string to Go's net/http constant name.
+func httpStatusConst(code string) string {
+	switch code {
+	case "200":
+		return "http.StatusOK"
+	case "201":
+		return "http.StatusCreated"
+	case "204":
+		return "http.StatusNoContent"
+	default:
+		return "http.StatusOK"
+	}
+}
+
+// buildFileToOperationID builds a map from generated .go filename to operationID.
+// SSaC generates files as snake_case(operationId).go.
+func buildFileToOperationID(funcs []ssacparser.ServiceFunc) map[string]string {
+	result := make(map[string]string)
+	for _, fn := range funcs {
+		// fn.FileName is already the generated filename (e.g. "create_gig.go")
+		result[fn.FileName] = fn.Name
+	}
+	return result
 }
 
 // collectModelIncludes extracts per-model x-include specs from OpenAPI operations.
