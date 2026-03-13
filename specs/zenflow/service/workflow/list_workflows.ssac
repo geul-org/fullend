@@ -1,6 +1,0 @@
-package service
-
-// @get User me = User.FindByID({ID: currentUser.ID})
-// @get []Workflow workflows = Workflow.ListByOrgID({OrgID: me.OrgID})
-// @response { workflows: workflows }
-func ListWorkflows() {}

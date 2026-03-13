@@ -1,8 +1,0 @@
-package service
-
-// @get Workflow workflow = Workflow.FindByID({ID: request.id})
-// @empty workflow "Workflow not found"
-// @auth "CreateAction" "workflow_org" {UserID: currentUser.ID, ResourceID: workflow.ID} "Forbidden"
-// @post Action action = Action.Create({WorkflowID: workflow.ID, ActionType: request.action_type, SequenceOrder: request.sequence_order})
-// @response { action: action }
-func CreateAction() {}

@@ -22,6 +22,9 @@ artifacts/dummy-*/
 # Local config
 .clari/
 
+# whyso cache
+.whyso/
+
 # Claude Code
 .claude/
 CLAUDE.md
