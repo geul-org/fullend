@@ -66,7 +66,7 @@ type ifaceParam struct {
 }
 
 // generateModelImpls generates model implementation files that use database/sql directly.
-func generateModelImpls(intDir string, models []string, modulePath, specsDir string, serviceFuncs []ssacparser.ServiceFunc, modelIncludeSpecs map[string][]string) error {
+func generateModelImpls(intDir string, models []string, modulePath, specsDir string, serviceFuncs []ssacparser.ServiceFunc, modelIncludeSpecs map[string][]string, cursorSpecs map[string]string) error {
 	if len(models) == 0 {
 		return nil
 	}
@@ -116,7 +116,7 @@ func generateModelImpls(intDir string, models []string, modulePath, specsDir str
 		table := tables[m]
 		queries := queriesByModel[m]
 		seqTypes := seqTypeByModel[m]
-		if err := generateModelFile(modelDir, m, methods, table, queries, seqTypes, includesByModel[m]); err != nil {
+		if err := generateModelFile(modelDir, m, methods, table, queries, seqTypes, includesByModel[m], cursorSpecs); err != nil {
 			return fmt.Errorf("%s.go: %w", strings.ToLower(m), err)
 		}
 	}
@@ -237,7 +237,7 @@ func generateTypesFile(modelDir string, models []string, tables map[string]*ddlT
 }
 
 // generateModelFile creates model/{model}.go with the implementation struct using *sql.DB.
-func generateModelFile(modelDir string, modelName string, methods []ifaceMethod, table *ddlTable, queries map[string]sqlcQuery, seqTypes map[string]string, includes []includeMapping) error {
+func generateModelFile(modelDir string, modelName string, methods []ifaceMethod, table *ddlTable, queries map[string]sqlcQuery, seqTypes map[string]string, includes []includeMapping, cursorSpecs map[string]string) error {
 	var b strings.Builder
 	lowerName := strings.ToLower(modelName)
 	implName := lowerName + "ModelImpl"
@@ -246,16 +246,22 @@ func generateModelFile(modelDir string, modelName string, methods []ifaceMethod,
 
 	// Check if any method returns pagination.Page or pagination.Cursor.
 	needsPagination := false
+	needsCursor := false
 	for _, method := range methods {
 		if strings.Contains(method.ReturnSig, "pagination.Page[") || strings.Contains(method.ReturnSig, "pagination.Cursor[") {
 			needsPagination = true
-			break
+		}
+		if strings.Contains(method.ReturnSig, "pagination.Cursor[") {
+			needsCursor = true
 		}
 	}
 
 	b.WriteString("import (\n")
 	b.WriteString("\t\"context\"\n")
 	b.WriteString("\t\"database/sql\"\n")
+	if needsCursor {
+		b.WriteString("\t\"fmt\"\n")
+	}
 	if needsPagination {
 		b.WriteString("\n\t\"github.com/geul-org/fullend/pkg/pagination\"\n")
 	}
@@ -307,7 +313,7 @@ func generateModelFile(modelDir string, modelName string, methods []ifaceMethod,
 		}
 		query := queries[method.Name]
 		seqType := seqTypes[method.Name]
-		generateMethodFromIface(&b, implName, modelName, method, &query, seqType, table, includes)
+		generateMethodFromIface(&b, implName, modelName, method, &query, seqType, table, includes, cursorSpecs)
 	}
 
 	// Generate include helper methods.
@@ -342,7 +348,7 @@ func generateScanFunc(b *strings.Builder, modelName string, table *ddlTable) {
 }
 
 // generateMethodFromIface writes a single method implementation based on the interface signature.
-func generateMethodFromIface(b *strings.Builder, implName, modelName string, m ifaceMethod, query *sqlcQuery, seqType string, table *ddlTable, includes []includeMapping) {
+func generateMethodFromIface(b *strings.Builder, implName, modelName string, m ifaceMethod, query *sqlcQuery, seqType string, table *ddlTable, includes []includeMapping, cursorSpecs map[string]string) {
 	// WithTx special case: return new impl with tx set.
 	if m.Name == "WithTx" {
 		b.WriteString(fmt.Sprintf("func (m *%s) WithTx(tx *sql.Tx) %sModel {\n", implName, modelName))
@@ -412,14 +418,93 @@ func generateMethodFromIface(b *strings.Builder, implName, modelName string, m i
 	}
 	isList := isListMethod(m.Name) && hasQueryOpts
 	isPageReturn := strings.Contains(m.ReturnSig, "pagination.Page[")
+	isCursorReturn := strings.Contains(m.ReturnSig, "pagination.Cursor[")
 	isFind := strings.HasPrefix(m.Name, "Find")
 
 	// Check if return type is a slice (e.g. "[]Lesson" in "([]Lesson, error)").
 	isSliceReturn := strings.Contains(m.ReturnSig, "[]")
 
 	switch {
+	case isList && isCursorReturn:
+		// Cursor-based pagination: no COUNT, LIMIT+1 for hasNext detection.
+		baseWhere := ""
+		baseArgCount := 0
+		if query != nil && query.SQL != "" {
+			baseWhere, baseArgCount = extractBaseWhere(query.SQL)
+		}
+
+		tableName := ""
+		if table != nil {
+			tableName = table.TableName
+		}
+
+		// Determine cursor field name from cursorSpecs.
+		cursorField := "ID"
+		if cursorSpecs != nil {
+			// Try to find operationId by matching method name to known cursor operations.
+			for opID, field := range cursorSpecs {
+				if opID == m.Name || strings.EqualFold(opID, m.Name) {
+					cursorField = field
+					break
+				}
+			}
+		}
+
+		b.WriteString(fmt.Sprintf("func (m *%s) %s(%s) %s {\n", implName, m.Name, m.ParamSig, m.ReturnSig))
+
+		// Build base args from non-opts params.
+		if len(callArgNames) > 0 {
+			b.WriteString(fmt.Sprintf("\tbaseArgs := []interface{}{%s}\n", strings.Join(callArgNames, ", ")))
+		}
+
+		// Save requested limit, then bump to LIMIT+1 for hasNext detection.
+		b.WriteString("\trequestedLimit := opts.Limit\n")
+		b.WriteString("\topts.Limit = requestedLimit + 1\n\n")
+
+		// Select query.
+		b.WriteString(fmt.Sprintf("\tselectSQL, selectArgs := BuildSelectQuery(%q, %q, %d, opts)\n", tableName, baseWhere, baseArgCount))
+		if len(callArgNames) > 0 {
+			b.WriteString("\tselectArgs = append(baseArgs, selectArgs...)\n")
+		}
+		b.WriteString("\trows, err := m.conn().QueryContext(context.Background(), selectSQL, selectArgs...)\n")
+		b.WriteString("\tif err != nil {\n")
+		b.WriteString("\t\treturn nil, err\n")
+		b.WriteString("\t}\n")
+		b.WriteString("\tdefer rows.Close()\n")
+		b.WriteString(fmt.Sprintf("\titems := make([]%s, 0)\n", modelName))
+		b.WriteString("\tfor rows.Next() {\n")
+		b.WriteString(fmt.Sprintf("\t\tv, err := scan%s(rows)\n", modelName))
+		b.WriteString("\t\tif err != nil {\n")
+		b.WriteString("\t\t\treturn nil, err\n")
+		b.WriteString("\t\t}\n")
+		b.WriteString("\t\titems = append(items, *v)\n")
+		b.WriteString("\t}\n")
+		b.WriteString("\tif err := rows.Err(); err != nil {\n")
+		b.WriteString("\t\treturn nil, err\n")
+		b.WriteString("\t}\n")
+
+		// Include loading.
+		for _, inc := range includes {
+			helperName := "include" + strcase.ToGoPascal(inc.IncludeName)
+			b.WriteString(fmt.Sprintf("\tif err := m.%s(items); err != nil {\n", helperName))
+			b.WriteString("\t\treturn nil, err\n")
+			b.WriteString("\t}\n")
+		}
+
+		// hasNext detection and cursor extraction.
+		b.WriteString("\thasNext := len(items) > requestedLimit\n")
+		b.WriteString("\tvar nextCursor string\n")
+		b.WriteString("\tif hasNext {\n")
+		b.WriteString("\t\titems = items[:requestedLimit]\n")
+		b.WriteString("\t}\n")
+		b.WriteString("\tif len(items) > 0 {\n")
+		b.WriteString(fmt.Sprintf("\t\tnextCursor = fmt.Sprintf(\"%%v\", items[len(items)-1].%s)\n", cursorField))
+		b.WriteString("\t}\n")
+		b.WriteString(fmt.Sprintf("\treturn &pagination.Cursor[%s]{Items: items, NextCursor: nextCursor, HasNext: hasNext}, nil\n", modelName))
+		b.WriteString("}\n")
+
 	case isList:
-		// List method with dynamic SQL returning *pagination.Page[T] or ([]T, int, error).
+		// Offset-based pagination: COUNT + SELECT returning *pagination.Page[T] or ([]T, int, error).
 		baseWhere := ""
 		baseArgCount := 0
 		if query != nil && query.SQL != "" {

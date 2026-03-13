@@ -35,6 +35,7 @@ func CheckOpenAPIDDL(doc *openapi3.T, st *ssacvalidator.SymbolTable, funcs []ssa
 			errs = append(errs, checkXSort(op, st, ctx)...)
 			errs = append(errs, checkXFilter(op, st, ctx)...)
 			errs = append(errs, checkXInclude(op, st, ctx, primaryTable)...)
+			errs = append(errs, checkCursorSort(op, st, ctx)...)
 		}
 	}
 
@@ -391,6 +392,90 @@ func unmarshalExt(v any, dst any) error {
 func columnExistsInAnyTable(snake string, st *ssacvalidator.SymbolTable) bool {
 	for _, table := range st.DDLTables {
 		if _, ok := table.Columns[snake]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// checkCursorSort validates cursor pagination + x-sort constraints.
+// Rules:
+// 1. cursor + x-sort allowed 2개 이상 → ERROR (런타임 정렬 전환 불가)
+// 2. cursor + x-sort default가 DDL UNIQUE 아님 → ERROR (중복값 시 cursor 깨짐)
+func checkCursorSort(op *openapi3.Operation, st *ssacvalidator.SymbolTable, ctx string) []CrossError {
+	var errs []CrossError
+
+	// Check if this operation uses cursor pagination.
+	pagRaw, ok := op.Extensions["x-pagination"]
+	if !ok {
+		return errs
+	}
+	var pagExt struct {
+		Style string `json:"style"`
+	}
+	if err := unmarshalExt(pagRaw, &pagExt); err != nil || pagExt.Style != "cursor" {
+		return errs
+	}
+
+	// No x-sort → default id DESC, always OK.
+	sortRaw, ok := op.Extensions["x-sort"]
+	if !ok {
+		return errs
+	}
+	var sortExt struct {
+		Allowed   []string `json:"allowed"`
+		Default   string   `json:"default"`
+		Direction string   `json:"direction"`
+	}
+	if err := unmarshalExt(sortRaw, &sortExt); err != nil {
+		return errs
+	}
+
+	// Rule 1: allowed가 2개 이상이면 ERROR.
+	if len(sortExt.Allowed) > 1 {
+		errs = append(errs, CrossError{
+			Rule:    "x-pagination ↔ x-sort",
+			Context: ctx,
+			Message: fmt.Sprintf("cursor 모드에서 x-sort allowed가 %d개 — 런타임 정렬 전환은 cursor를 깨뜨립니다", len(sortExt.Allowed)),
+			Level:   "ERROR",
+		})
+		return errs
+	}
+
+	// Rule 2: default 컬럼이 DDL UNIQUE인지 확인.
+	defaultCol := sortExt.Default
+	if defaultCol == "" && len(sortExt.Allowed) == 1 {
+		defaultCol = sortExt.Allowed[0]
+	}
+	if defaultCol != "" {
+		tableName := inferTableFromCtx(op, st)
+		if tableName != "???" && !isUniqueColumn(defaultCol, tableName, st) {
+			errs = append(errs, CrossError{
+				Rule:       "x-pagination ↔ x-sort ↔ DDL",
+				Context:    ctx,
+				Message:    fmt.Sprintf("cursor 모드의 x-sort default %q — DDL %s에서 UNIQUE가 아닙니다. 중복값 시 cursor가 깨집니다", defaultCol, tableName),
+				Level:      "ERROR",
+				Suggestion: fmt.Sprintf("DDL에 UNIQUE 제약 추가: ALTER TABLE %s ADD CONSTRAINT uniq_%s_%s UNIQUE (%s);", tableName, tableName, defaultCol, defaultCol),
+			})
+		}
+	}
+
+	return errs
+}
+
+// isUniqueColumn checks if a column is PRIMARY KEY or has a UNIQUE constraint.
+func isUniqueColumn(col, tableName string, st *ssacvalidator.SymbolTable) bool {
+	table, ok := st.DDLTables[tableName]
+	if !ok {
+		return false
+	}
+	for _, pk := range table.PrimaryKey {
+		if pk == col {
+			return true
+		}
+	}
+	for _, idx := range table.Indexes {
+		if idx.IsUnique && len(idx.Columns) == 1 && idx.Columns[0] == col {
 			return true
 		}
 	}

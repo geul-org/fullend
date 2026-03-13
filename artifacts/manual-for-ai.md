@@ -30,10 +30,8 @@
 ```yaml
 apiVersion: fullend/v1
 kind: Project
-
 metadata:
   name: <project-name>
-
 backend:
   lang: go
   framework: gin
@@ -46,36 +44,11 @@ backend:
       ID: user_id                   # *_id → int64, otherwise → string
       Email: email
       Role: role
-
 frontend:
   lang: typescript
   framework: react
   bundler: vite
   name: project-web
-
-deploy:
-  image: ghcr.io/org/project
-  domain: project.example.com
-
-session:
-  backend: postgres                 # postgres | memory
-
-cache:
-  backend: postgres                 # postgres | memory
-
-file:
-  backend: s3                       # s3 | local
-  s3:
-    bucket: my-bucket
-    region: ap-northeast-2
-  local:
-    root: ./uploads
-
-queue:
-  backend: postgres                  # postgres | memory
-
-authz:
-  package: github.com/org/project/internal/authz  # custom authz package (optional)
 ```
 
 ### Required Fields
@@ -223,6 +196,55 @@ responses:
               type: integer
 ```
 
+**OpenAPI response for Cursor[T]:** Declare `items` (array), `next_cursor` (string), `has_next` (boolean).
+
+```yaml
+responses:
+  200:
+    content:
+      application/json:
+        schema:
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Gig'
+            next_cursor:
+              type: string
+            has_next:
+              type: boolean
+```
+
+### Cursor Pagination Internals
+
+cursor = **fixed-sort feed only**. No runtime sort switching.
+
+- Default sort: `id DESC` (when x-sort is absent)
+- Cursor value = raw string value of the cursor column from the last row (no encoding)
+- Fetches `LIMIT + 1` rows to determine `has_next` (no COUNT query)
+- `x-filter` is compatible with cursor (adds WHERE conditions)
+
+```
+# First page
+GET /items?limit=20
+→ SELECT * FROM items ORDER BY id DESC LIMIT 21
+
+# Next page
+GET /items?limit=20&cursor=42
+→ SELECT * FROM items WHERE id < 42 ORDER BY id DESC LIMIT 21
+```
+
+### Cursor + x-sort Constraints
+
+| Condition | Result |
+|------|------|
+| cursor + no x-sort | OK — defaults to `id DESC` |
+| cursor + x-sort default is DDL UNIQUE column | OK — fixed sort on that column |
+| cursor + x-sort default is NOT DDL UNIQUE | **ERROR** — duplicate values break cursor |
+| cursor + x-sort allowed has 2+ entries | **ERROR** — runtime sort switching not allowed |
+
+Cursor column = `x-sort.default` (falls back to `id`). UNIQUE determination: columns with `UNIQUE` constraint or `PRIMARY KEY` in DDL.
+
 ### Package-Prefix @model (Non-DDL Models)
 
 ```go
@@ -282,7 +304,7 @@ func HoldEscrow(req HoldEscrowRequest) (HoldEscrowResponse, error) {
 ```go
 // @func verifyPassword
 // @error 401
-// @description 저장된 해시와 평문 비밀번호가 일치하는지 검증한다
+// @description Verifies the plaintext password matches the stored hash
 
 func VerifyPassword(req VerifyPasswordRequest) (VerifyPasswordResponse, error) { ... }
 ```
@@ -432,26 +454,8 @@ func WithDelay(seconds int) PublishOption
 func WithPriority(p string) PublishOption
 ```
 
-Backends: PostgreSQL (`fullend_queue` table, polling), Memory (synchronous, test only)
-
-SSaC usage:
-```go
-// @publish "order.completed" {OrderID: order.ID, Email: order.Email}
-// @publish "cart.abandoned" {CartID: cart.ID} {delay: 1800}
-```
-
-Subscribe functions use `@subscribe` trigger with message struct:
-```go
-type OnOrderCompletedMessage struct {
-    OrderID int64
-    Email   string
-}
-
-// @subscribe "order.completed"
-// @get Order order = Order.FindByID({ID: message.OrderID})
-// @call mail.SendEmail({To: message.Email, Subject: "Order completed"})
-func OnOrderCompleted(message OnOrderCompletedMessage) {}
-```
+Backends: PostgreSQL (`fullend_queue` table, polling), Memory (synchronous, test only).
+SSaC usage: see `@publish` / `@subscribe` in SSaC section above.
 
 ## Middleware — BearerAuth
 
@@ -495,11 +499,12 @@ When `data-bind` references a field not in the OpenAPI response schema, exportin
 ## OpenAPI x- Extensions
 
 ```yaml
+# Offset pagination (runtime sort switching allowed)
 /courses:
   get:
     operationId: ListCourses
     x-pagination:
-      style: offset           # offset | cursor
+      style: offset
       defaultLimit: 20
       maxLimit: 100
     x-sort:
@@ -511,6 +516,32 @@ When `data-bind` references a field not in the OpenAPI response schema, exportin
     x-include:
       allowed: [instructor_id:users.id]   # FKColumn:RefTable.RefColumn
 ```
+
+```yaml
+# Cursor pagination — fixed sort, x-sort is optional
+/feed:
+  get:
+    operationId: ListFeed
+    x-pagination:
+      style: cursor
+      defaultLimit: 20
+      maxLimit: 100
+    # Without x-sort → defaults to id DESC
+    # With x-sort: allowed must have at most 1 entry, default must be a DDL UNIQUE column
+    x-filter:
+      allowed: [status]
+```
+
+**x-pagination cursor constraints:**
+
+| Rule | Description |
+|------|------|
+| x-sort is optional | Defaults to `id DESC` |
+| x-sort.allowed max 1 entry | 2+ entries → crosscheck ERROR (runtime sort switching not allowed) |
+| x-sort.default must be DDL UNIQUE column | Non-UNIQUE → crosscheck ERROR (duplicate values break cursor) |
+| sortBy/sortDir query params ignored | Sort is fixed in cursor mode |
+| No OFFSET | Replaced by cursor query parameter |
+| No COUNT query | Uses LIMIT+1 to determine has_next |
 
 ## sqlc Cardinality
 
@@ -653,24 +684,24 @@ allow if {
 
 ## Scenario Tests (Hurl)
 
-시나리오 테스트는 사용자가 표준 Hurl 문법으로 직접 작성한다. 자체 DSL 없음.
+Scenario tests are written by the user in standard Hurl syntax. No custom DSL.
 
-- 위치: `tests/scenario-*.hurl` (시나리오), `tests/invariant-*.hurl` (불변식)
-- 자동 생성 대상 아님 — `fullend gen`은 스모크 테스트(smoke.hurl)만 생성
-- `.feature` 파일은 더 이상 지원하지 않음 (validate 시 ERROR)
+- Location: `tests/scenario-*.hurl` (scenarios), `tests/invariant-*.hurl` (invariants)
+- Not auto-generated — `fullend gen` only generates smoke tests (smoke.hurl)
+- `.feature` files are no longer supported (ERROR on validate)
 
-### 크로스체크 (Scenario → OpenAPI, 단방향)
+### Crosscheck (Scenario → OpenAPI, one-directional)
 
-| 규칙 | 설명 | 수준 |
+| Rule | Description | Level |
 |---|---|---|
-| 경로 존재 | `.hurl`의 URL path가 OpenAPI에 정의되어 있는가 | ERROR |
-| 메서드 일치 | 해당 path의 HTTP 메서드가 OpenAPI에 정의되어 있는가 | ERROR |
-| 상태코드 정의 | 기대하는 HTTP 상태코드가 OpenAPI responses에 있는가 | WARNING |
+| Path exists | URL path in `.hurl` is defined in OpenAPI | ERROR |
+| Method matches | HTTP method for that path is defined in OpenAPI | ERROR |
+| Status code defined | Expected HTTP status code is in OpenAPI responses | WARNING |
 
-### Hurl 참조
+### Hurl Reference
 
-- 공식 문서: https://hurl.dev/docs/manual.html
-- 주요 구문: `[Captures]` (변수 캡처), `[Asserts]` (검증), `{{변수}}` (변수 참조)
+- Official docs: https://hurl.dev/docs/manual.html
+- Key syntax: `[Captures]` (variable capture), `[Asserts]` (assertions), `{{variable}}` (variable reference)
 
 ## Name Matching Rules
 
@@ -739,7 +770,7 @@ DDL column names that are Go reserved words (`type`, `range`, `select`, `map`, e
 
 ### @sensitive / @nosensitive Annotation
 
-DDL 컬럼에 `-- @sensitive` 주석을 붙이면 해당 컬럼의 JSON 태그가 `json:"-"`로 생성되어 API 응답에서 제외된다.
+Adding `-- @sensitive` comment to a DDL column generates `json:"-"` tag, excluding it from API responses.
 
 ```sql
 CREATE TABLE users (
@@ -750,30 +781,30 @@ CREATE TABLE users (
 );
 ```
 
-생성 결과:
+Generated result:
 ```go
 type User struct {
     ID           int64  `json:"id"`
     Email        string `json:"email"`
-    PasswordHash string `json:"-"`       // @sensitive → 응답에서 제외
+    PasswordHash string `json:"-"`       // @sensitive → excluded from response
     Name         string `json:"name"`
 }
 ```
 
-**crosscheck WARNING**: 컬럼명에 `password`, `secret`, `hash`, `token` 패턴이 포함되었으나 `@sensitive`가 없으면 WARNING을 출력한다.
+**crosscheck WARNING**: Columns matching patterns like `password`, `secret`, `hash`, `token` without `@sensitive` trigger a WARNING.
 
-민감하지 않은 컬럼이 패턴에 걸리는 경우(예: `file_hash`, `commit_hash`) `-- @nosensitive`로 WARNING을 억제한다.
+For non-sensitive columns that match patterns (e.g., `file_hash`, `commit_hash`), use `-- @nosensitive` to suppress the WARNING.
 
 ```sql
     file_hash VARCHAR(255) NOT NULL,     -- @nosensitive
     password_hash VARCHAR(255) NOT NULL, -- @sensitive
 ```
 
-| 어노테이션 | 효과 |
+| Annotation | Effect |
 |---|---|
-| `-- @sensitive` | `json:"-"` 생성, WARNING 미출력 |
-| `-- @nosensitive` | `json:"column_name"` 유지, WARNING 억제 |
-| (없음) + 패턴 매칭 | `json:"column_name"` 유지, WARNING 출력 |
+| `-- @sensitive` | Generates `json:"-"`, no WARNING |
+| `-- @nosensitive` | Keeps `json:"column_name"`, suppresses WARNING |
+| (none) + pattern match | Keeps `json:"column_name"`, emits WARNING |
 
 ### FK DEFAULT 0 Pattern (Sentinel Record)
 
@@ -798,164 +829,73 @@ ON CONFLICT DO NOTHING;
 
 ## Contract-Based Code Generation
 
-생성된 코드의 **함수 단위 소유권 관리**. 입출력 계약(contract)만 유지하면 내부 구현(body)은 수동 수정 가능.
+**Function-level ownership management** of generated code. As long as the input/output contract is preserved, the function body can be manually modified.
 
-### 소유권 디렉티브: `//fullend:`
+### Ownership Directive: `//fullend:`
 
-생성된 Go/TSX 코드에 메타 정보를 내장. 외부 lock 파일 불필요.
+Embeds metadata in generated Go/TSX code. No external lock file needed.
 
 ```go
 //fullend:<ownership> ssot=<path> contract=<hash>
+// Example: //fullend:gen ssot=service/gig/create_gig.ssac contract=a3f8c1
 ```
 
-| 필드 | 값 | 의미 |
+| Field | Value | Meaning |
 |---|---|---|
-| ownership | `gen` | fullend 소유 — gen 시 덮어씀 |
-| ownership | `preserve` | 개발자 소유 — gen 시 body 보존 |
-| `ssot=` | SSOT 파일 상대경로 | 이 함수의 출처 |
-| `contract=` | SHA256 앞 7자리 | SSOT 파생 계약의 변경 감지용 해시 |
+| ownership | `gen` / `preserve` | fullend-owned (overwritten) / developer-owned (body preserved) |
+| `ssot=` | Relative path to SSOT file | Source of this function |
+| `contract=` | First 7 hex chars of SHA256 | Change detection hash |
 
-**함수 레벨** — 함수 doc comment 위치:
-```go
-//fullend:gen ssot=service/gig/create_gig.ssac contract=a3f8c1
-func (h *Handler) CreateGig(c *gin.Context) { ... }
-```
+Placement: above function (Go), above package declaration (state machines), top of module (TSX).
 
-**파일 레벨** — package 선언 위 (state machine 등):
-```go
-//fullend:gen ssot=states/gig.md contract=f5b3a9
-package gigstate
-```
+### Contract Hash Calculation
 
-**TSX** — 모듈 최상위:
-```tsx
-// fullend:gen ssot=frontend/gig_list.html contract=d4e5f6
-export function GigListPage() { ... }
-```
+Hash targets differ by SSOT type:
 
-### Contract Hash 계산
-
-각 SSOT 종류별로 해싱 대상이 다름:
-
-| 대상 | 해싱 대상 |
+| Target | Hash Input |
 |---|---|
-| Service Handler | operationId + 시퀀스 타입 목록 + request fields + response fields |
-| Model Implementation | 함수명 + 파라미터 타입 + 반환 타입 |
-| State Machine | state 목록 + transition 목록 |
+| Service Handler | operationId + sequence type list + request fields + response fields |
+| Model Implementation | function name + parameter types + return types |
+| State Machine | state list + transition list |
 | Middleware | CurrentUser struct fields |
 
-모두 SHA256 → 앞 7자리 hex.
+All use SHA256 → first 7 hex characters.
 
-### Preserve 모드
+### Preserve Mode
 
-`gen` → `preserve`로 변경하면 소유권 전환. `fullend gen` 시 preserve 함수의 body를 보존.
+Changing `gen` → `preserve` transfers ownership. `fullend gen` preserves the function body of preserve-marked functions.
 
-| 디렉티브 | contract 변경 | gen 동작 |
+| Directive | Contract Changed | gen Behavior |
 |---|---|---|
-| 없음 (새 파일) | — | 생성 + `//fullend:gen` 부착 |
-| `gen` | — | 덮어씀 |
-| `preserve` | 없음 | **스킵 (body 보존)** |
-| `preserve` | 있음 | **body 보존 + 충돌 경고 + `.new` 파일 생성** |
+| None (new file) | — | Generate + attach `//fullend:gen` |
+| `gen` | — | Overwrite |
+| `preserve` | No | **Skip (body preserved)** |
+| `preserve` | Yes | **Body preserved + conflict warning + `.new` file generated** |
 
-충돌 시 `.new` 파일을 참고해 수동 머지 후, 원본의 `contract=` 해시를 새 값으로 갱신.
+On conflict, manually merge using the `.new` file as reference, then update the `contract=` hash to the new value.
 
-한 파일에 gen/preserve 혼재 가능 — Go AST 함수 단위 splice로 처리.
+gen/preserve can coexist in one file — handled via Go AST function-level splice.
 
-### Contract 상태 분류
+### Contract Status Classification
 
-| Status | 조건 |
+| Status | Condition |
 |---|---|
-| `gen` | fullend 소유, gen 시 덮어씀 |
-| `preserve` | 개발자 소유, 계약 유지 |
-| `broken` | SSOT 변경으로 계약 불일치 |
-| `orphan` | SSOT 파일 삭제됨 |
+| `gen` | fullend-owned, overwritten on gen |
+| `preserve` | developer-owned, contract maintained |
+| `broken` | Contract mismatch due to SSOT change |
+| `orphan` | SSOT file deleted |
 
 ## CLI Commands
 
-### fullend validate [--skip kind,...] \<specs-dir\>
-SSOT 개별 검증 + 교차 정합성 검증 + 계약 검증. artifacts 디렉토리가 있으면 Contract 행도 출력.
+| Command | Description |
+|---|---|
+| `fullend validate [--skip kind,...] <specs-dir>` | SSOT validation + cross-validation + contract verification |
+| `fullend gen [--skip kind,...] [--reset] <specs-dir> <artifacts-dir>` | Generate all code artifacts (Go backend, React frontend, Hurl tests). `--reset` reverts preserve → gen |
+| `fullend status <specs-dir>` | SSOT status summary |
+| `fullend contract <specs-dir> <artifacts-dir>` | Contract status check (gen/preserve/broken/orphan) |
+| `fullend chain <operationId> <specs-dir>` | Feature Chain — all SSOTs connected to one operationId |
+| `fullend gen-model <openapi-source> <output-dir>` | Generate Go models from external OpenAPI |
+| `fullend map [path] [-f] [-o file]` | Keyword map (whyso/v1 format), cached in `.whyso/_map.md` |
+| `fullend history <file\|dir> [--all] [--format json] [-q]` | File change history (whyso/v1 format) |
 
-### fullend gen [--skip kind,...] [--reset] \<specs-dir\> \<artifacts-dir\>
-검증 통과 후 전체 코드 산출 (Go backend, React frontend, Hurl 테스트 등).
-- `--reset`: 모든 `//fullend:preserve` 함수를 `//fullend:gen`으로 되돌리고 body 재생성 (Y/n 확인 프롬프트).
-
-### fullend status \<specs-dir\>
-SSOT 현황 요약 출력.
-
-### fullend contract \<specs-dir\> \<artifacts-dir\>
-SSOT ↔ artifacts 계약 상태 확인. gen/preserve/broken/orphan 분류 출력.
-
-```
-Contract Status:
-  gen       service/gig/list_gigs.go      ListGigs         fullend 소유
-  preserve  service/gig/create_gig.go     CreateGig        계약 유지 ✓
-  broken    service/gig/update_gig.go     UpdateGig        계약 위반 ✗ (arg added)
-  orphan    service/gig/old_feature.go    OldFeature       SSOT 삭제됨 ⚠
-```
-
-### fullend chain \<operationId\> \<specs-dir\>
-Feature Chain 추출 — operationId 하나로 연결된 모든 SSOT의 파일:라인을 출력.
-
-```bash
-$ fullend chain AcceptProposal specs/gigbridge/
-
-── Feature Chain: AcceptProposal ──
-
-  OpenAPI    api/openapi.yaml:296                          POST /proposals/{id}/accept
-  SSaC       service/proposal/accept_proposal.ssac:19      @get @empty @auth @state @put @call @post @response
-  DDL        db/gigs.sql:1                                 CREATE TABLE gigs
-  DDL        db/proposals.sql:1                            CREATE TABLE proposals
-  DDL        db/transactions.sql:1                         CREATE TABLE transactions
-  Rego       policy/authz.rego:3                           resource: gig
-  StateDiag  states/gig.md:7                               diagram: gig → AcceptProposal
-  StateDiag  states/proposal.md:6                          diagram: proposal → AcceptProposal
-  FuncSpec   func/billing/hold_escrow.go:8                 @func billing.HoldEscrow
-  Hurl       tests/scenario-gig-lifecycle.hurl:10          scenario: scenario-gig-lifecycle.hurl
-
-  ── Artifacts ──
-  Handler    internal/service/proposal/accept_proposal.go:AcceptProposal   preserve ✎
-  Model      internal/model/gig.go:Create                                  gen
-  Authz      internal/authz/authz.go                                       gen
-```
-
-탐색 경로: OpenAPI operationId → SSaC 함수 → `@get`/`@post` Model.Method → DDL 테이블 | `@auth` → Rego 정책 | `@state` → Mermaid stateDiagram | `@call` → Func Spec | Hurl → 시나리오 | STML endpoint → 프론트엔드.
-
-### fullend gen-model \<openapi-source\> \<output-dir\>
-외부 OpenAPI에서 Go model 생성.
-
-### fullend map [path]
-프로젝트의 keyword map 생성 (whyso/v1 포맷). 함수명, endpoint, 규칙, 상태 등 전체 심볼을 언어별로 분류 출력. `.whyso/_map.md`에 캐시.
-
-```bash
-fullend map                    # 현재 디렉토리
-fullend map specs/gigbridge/   # 특정 경로
-fullend map -f                 # 강제 재생성
-fullend map -o custom.md       # 출력 파일 지정
-```
-
-### fullend history \<file|dir\> [options]
-파일의 변경 이력 조회 (whyso/v1 포맷). Claude Code 세션에서 누가 왜 수정했는지 추적.
-
-```bash
-fullend history cmd/fullend/main.go           # 단일 파일 이력
-fullend history internal/ --all               # 디렉토리 전체 이력
-fullend history cmd/fullend/main.go --format json   # JSON 출력
-fullend history cmd/fullend/main.go -q        # 캐시만 갱신 (stdout 없음)
-```
-
-출력 예시:
-```yaml
-apiVersion: whyso/v1
-file: cmd/fullend/main.go
-created: 2026-03-11T06:15:13Z
-history:
-  - timestamp: 2026-03-11T06:15:13Z
-    session: 9b624be7-...
-    user_request: "구현해"
-    tool: Edit
-    source: ~/.claude/projects/.../9b624be7.jsonl:7420
-```
-
-### --skip flag
-`--skip openapi,stml` 등으로 특정 SSOT 검증/생성 제외.
-유효값: openapi, ddl, ssac, model, stml, states, policy, scenario, func
+`--skip` excludes SSOT kinds: openapi, ddl, ssac, model, stml, states, policy, scenario, func

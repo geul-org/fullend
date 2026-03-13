@@ -79,14 +79,23 @@ func ParseQueryOpts(c *gin.Context, cfg QueryOptsConfig) QueryOpts {
 			opts.SortDir = "asc"
 		}
 
-		if sortBy := c.Query("sortBy"); sortBy != "" {
-			if containsStr(cfg.Sort.Allowed, sortBy) {
-				opts.SortCol = sortBy
+		// Cursor mode: fixed sort, no runtime switching.
+		if cfg.Pagination != nil && cfg.Pagination.Style == "cursor" {
+			// Sort is fixed to cfg.Sort.Default + direction. Ignore query params.
+		} else {
+			if sortBy := c.Query("sortBy"); sortBy != "" {
+				if containsStr(cfg.Sort.Allowed, sortBy) {
+					opts.SortCol = sortBy
+				}
+			}
+			if sortDir := c.Query("sortDir"); sortDir == "asc" || sortDir == "desc" {
+				opts.SortDir = sortDir
 			}
 		}
-		if sortDir := c.Query("sortDir"); sortDir == "asc" || sortDir == "desc" {
-			opts.SortDir = sortDir
-		}
+	} else if cfg.Pagination != nil && cfg.Pagination.Style == "cursor" {
+		// Cursor without x-sort: default to id DESC.
+		opts.SortCol = "id"
+		opts.SortDir = "desc"
 	}
 
 	// Filter
@@ -125,6 +134,26 @@ func BuildSelectQuery(table, baseWhere string, baseArgCount int, opts QueryOpts)
 		argIdx++
 	}
 
+	// Cursor WHERE clause
+	if opts.Cursor != "" {
+		cursorCol := opts.SortCol
+		if cursorCol == "" {
+			cursorCol = "id"
+		}
+		op := "<" // DESC: fetch rows less than cursor
+		if opts.SortDir == "asc" {
+			op = ">"
+		}
+		if baseWhere == "" && len(args) == 0 {
+			sql += " WHERE "
+		} else {
+			sql += " AND "
+		}
+		sql += fmt.Sprintf("%s %s $%d", cursorCol, op, argIdx)
+		args = append(args, opts.Cursor)
+		argIdx++
+	}
+
 	// Sort
 	if opts.SortCol != "" {
 		dir := "ASC"
@@ -134,13 +163,14 @@ func BuildSelectQuery(table, baseWhere string, baseArgCount int, opts QueryOpts)
 		sql += fmt.Sprintf(" ORDER BY %s %s", opts.SortCol, dir)
 	}
 
-	// Pagination (offset)
+	// Pagination
 	if opts.Limit > 0 {
 		sql += fmt.Sprintf(" LIMIT $%d", argIdx)
 		args = append(args, opts.Limit)
 		argIdx++
 	}
-	if opts.Offset > 0 {
+	// OFFSET — only for non-cursor mode
+	if opts.Offset > 0 && opts.Cursor == "" {
 		sql += fmt.Sprintf(" OFFSET $%d", argIdx)
 		args = append(args, opts.Offset)
 		argIdx++

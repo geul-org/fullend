@@ -102,7 +102,8 @@ func Generate(input *GlueInput) error {
 
 	// Shared: model implementations + frontend (same for both modes).
 	modelIncludeSpecs := collectModelIncludes(input.OpenAPIDoc, input.ServiceFuncs)
-	if err := generateModelImpls(intDir, models, input.ModulePath, input.SpecsDir, input.ServiceFuncs, modelIncludeSpecs); err != nil {
+	cursorSpecs := collectCursorSpecs(input.OpenAPIDoc)
+	if err := generateModelImpls(intDir, models, input.ModulePath, input.SpecsDir, input.ServiceFuncs, modelIncludeSpecs, cursorSpecs); err != nil {
 		return fmt.Errorf("model impl: %w", err)
 	}
 	if err := generateFrontendSetup(input.ArtifactsDir, input.OpenAPIDoc, input.STMLDeps, input.STMLPages, input.STMLPageOps); err != nil {
@@ -574,5 +575,33 @@ func collectModelIncludes(doc *openapi3.T, funcs []ssacparser.ServiceFunc) map[s
 		}
 	}
 
+	return result
+}
+
+// collectCursorSpecs extracts cursor column Go field name per operationId.
+// Returns map[operationId]string ("ID" default, or PascalCase of x-sort.default).
+func collectCursorSpecs(doc *openapi3.T) map[string]string {
+	result := make(map[string]string)
+	if doc == nil || doc.Paths == nil {
+		return result
+	}
+	for _, pi := range doc.Paths.Map() {
+		for _, op := range pi.Operations() {
+			if op == nil || op.OperationID == "" {
+				continue
+			}
+			pag := getExtMap(op, "x-pagination")
+			if pag == nil || getStr(pag, "style", "") != "cursor" {
+				continue
+			}
+			cursorField := "ID"
+			if sortExt := getExtMap(op, "x-sort"); sortExt != nil {
+				if def := getStr(sortExt, "default", ""); def != "" {
+					cursorField = strcase.ToGoPascal(def)
+				}
+			}
+			result[op.OperationID] = cursorField
+		}
+	}
 	return result
 }
