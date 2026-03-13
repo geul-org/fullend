@@ -81,7 +81,7 @@ Authorization: Bearer {{token}}
 Content-Type: application/json
 {
   "action_type": "test_string",
-  "payload_template": "test_string",
+  "payload_template": {},
   "sequence_order": 1
 }
 

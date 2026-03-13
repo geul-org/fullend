@@ -12,15 +12,15 @@ func (h *Handler) CreateWorkflow(c *gin.Context) {
 	currentUser := c.MustGet("currentUser").(*model.CurrentUser)
 
 	var req struct {
-		Title        string `json:"title"`
 		TriggerEvent string `json:"trigger_event"`
+		Title        string `json:"title"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
-	title := req.Title
 	triggerEvent := req.TriggerEvent
+	title := req.Title
 
 	tx, err := h.DB.BeginTx(c.Request.Context(), nil)
 	if err != nil {

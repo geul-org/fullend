@@ -20,17 +20,17 @@ func (h *Handler) CreateAction(c *gin.Context) {
 	currentUser := c.MustGet("currentUser").(*model.CurrentUser)
 
 	var req struct {
+		ActionType      string `json:"action_type"`
 		PayloadTemplate string `json:"payload_template"`
 		SequenceOrder   int64  `json:"sequence_order"`
-		ActionType      string `json:"action_type"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
+	actionType := req.ActionType
 	payloadTemplate := req.PayloadTemplate
 	sequenceOrder := req.SequenceOrder
-	actionType := req.ActionType
 
 	tx, err := h.DB.BeginTx(c.Request.Context(), nil)
 	if err != nil {

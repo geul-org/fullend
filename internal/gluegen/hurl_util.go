@@ -53,6 +53,10 @@ func generateDummyValue(fieldName string, schema *openapi3.Schema, checkEnums ma
 		return 1.0
 	case "boolean":
 		return true
+	case "object":
+		return map[string]interface{}{}
+	case "array":
+		return []interface{}{}
 	default:
 		return "test_string"
 	}
@@ -72,6 +76,10 @@ func formatDummyValue(v interface{}) string {
 			return "true"
 		}
 		return "false"
+	case map[string]interface{}:
+		return "{}"
+	case []interface{}:
+		return "[]"
 	default:
 		return fmt.Sprintf("%q", fmt.Sprint(val))
 	}
