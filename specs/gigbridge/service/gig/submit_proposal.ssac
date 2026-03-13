@@ -1,0 +1,8 @@
+package service
+
+// @get Gig gig = Gig.FindByID({ID: request.id})
+// @empty gig "Gig not found"
+// @auth "SubmitProposal" "gig" {UserID: currentUser.ID, ResourceID: gig.ID} "Forbidden"
+// @post Proposal proposal = Proposal.Create({GigID: gig.ID, FreelancerID: currentUser.ID, BidAmount: request.bid_amount})
+// @response { proposal: proposal }
+func SubmitProposal() {}

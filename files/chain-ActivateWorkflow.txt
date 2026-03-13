@@ -1,0 +1,14 @@
+
+── Feature Chain: ActivateWorkflow ──
+
+  OpenAPI    api/openapi.yaml:299                          PUT /workflows/{id}/activate
+  SSaC       service/workflow/activate_workflow.ssac:13    @get @empty @auth @state @put @response
+  DDL        db/organizations.sql:1                        CREATE TABLE organizations
+  DDL        db/users.sql:1                                CREATE TABLE users
+  DDL        db/workflows.sql:1                            CREATE TABLE workflows
+  Rego       policy/authz.rego:3                           resource: workflow_org
+  StateDiag  states/workflow.md:6                          diagram: workflow → ActivateWorkflow
+  Gherkin    scenario/automation.feature:4                 Scenario: Happy Path - Create and Execute Workflow
+  Gherkin    scenario/automation.feature:32                Scenario: Tenant Breach - Org A user cannot access Org B workflow
+  Gherkin    scenario/automation.feature:54                Scenario: Insufficient Credits - Cannot activate with zero credits
+

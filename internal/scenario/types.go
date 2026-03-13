@@ -12,6 +12,7 @@ type Feature struct {
 // Scenario represents a single Scenario (or Background) block.
 type Scenario struct {
 	Name  string // Scenario name (empty for Background)
+	Line  int    // 1-based line number of the "Scenario:" line
 	Steps []Step
 }
 

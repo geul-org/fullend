@@ -1,0 +1,13 @@
+package service
+
+// @get Workflow workflow = Workflow.FindByID({ID: request.id})
+// @empty workflow "Workflow not found"
+// @get User me = User.FindByID({ID: currentUser.ID})
+// @auth "ActivateWorkflow" "workflow_org" {UserID: currentUser.ID, ResourceID: workflow.ID} "Forbidden"
+// @get Organization orgWithCredits = Organization.FindByIDWithCredits({ID: me.OrgID})
+// @empty orgWithCredits "Insufficient credits"
+// @state workflow {status: workflow.Status} "ActivateWorkflow" "Cannot transition"
+// @put Workflow.UpdateStatus({Status: "active", ID: workflow.ID})
+// @get Workflow updatedWorkflow = Workflow.FindByID({ID: workflow.ID})
+// @response { workflow: updatedWorkflow }
+func ActivateWorkflow() {}

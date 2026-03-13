@@ -1,0 +1,12 @@
+package service
+
+// @get Proposal proposal = Proposal.FindByID({ID: request.id})
+// @empty proposal "Proposal not found"
+// @get Gig gig = Gig.FindByID({ID: proposal.GigID})
+// @empty gig "Gig not found"
+// @auth "RejectProposal" "gig" {UserID: currentUser.ID, ResourceID: gig.ID} "Forbidden"
+// @state proposal {status: proposal.Status} "RejectProposal" "Cannot transition"
+// @put Proposal.UpdateStatus({Status: "rejected", ID: proposal.ID})
+// @get Proposal updatedProposal = Proposal.FindByID({ID: proposal.ID})
+// @response { proposal: updatedProposal }
+func RejectProposal() {}

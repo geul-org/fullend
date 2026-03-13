@@ -1,0 +1,7 @@
+package service
+
+// @get User me = User.FindByID({ID: currentUser.ID})
+// @auth "CreateWorkflow" "user_org" {UserID: currentUser.ID, ResourceID: me.ID} "Admin only"
+// @post Workflow workflow = Workflow.Create({OrgID: me.OrgID, Title: request.title, TriggerEvent: request.trigger_event})
+// @response { workflow: workflow }
+func CreateWorkflow() {}

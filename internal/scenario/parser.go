@@ -48,7 +48,7 @@ func Parse(file, content string) (*Feature, error) {
 	var currentScenario *Scenario
 	inBackground := false
 
-	for _, raw := range lines {
+	for lineNum, raw := range lines {
 		line := strings.TrimSpace(raw)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
@@ -80,7 +80,7 @@ func Parse(file, content string) (*Feature, error) {
 		// Scenario
 		if strings.HasPrefix(line, "Scenario:") {
 			name := strings.TrimSpace(strings.TrimPrefix(line, "Scenario:"))
-			f.Scenarios = append(f.Scenarios, Scenario{Name: name})
+			f.Scenarios = append(f.Scenarios, Scenario{Name: name, Line: lineNum + 1})
 			currentScenario = &f.Scenarios[len(f.Scenarios)-1]
 			inBackground = false
 			continue

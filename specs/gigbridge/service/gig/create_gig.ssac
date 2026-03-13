@@ -1,0 +1,5 @@
+package service
+
+// @post Gig gig = Gig.Create({ClientID: currentUser.ID, Title: request.title, Description: request.description, Budget: request.budget})
+// @response { gig: gig }
+func CreateGig() {}

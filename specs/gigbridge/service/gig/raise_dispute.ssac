@@ -1,0 +1,10 @@
+package service
+
+// @get Gig gig = Gig.FindByID({ID: request.id})
+// @empty gig "Gig not found"
+// @auth "RaiseDispute" "gig" {UserID: currentUser.ID, ResourceID: gig.ID} "Forbidden"
+// @state gig {status: gig.Status} "RaiseDispute" "Cannot transition"
+// @put Gig.UpdateStatus({Status: "disputed", ID: gig.ID})
+// @get Gig updatedGig = Gig.FindByID({ID: gig.ID})
+// @response { gig: updatedGig }
+func RaiseDispute() {}

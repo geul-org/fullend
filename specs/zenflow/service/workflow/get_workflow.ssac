@@ -1,0 +1,7 @@
+package service
+
+// @get Workflow workflow = Workflow.FindByID({ID: request.id})
+// @empty workflow "Workflow not found"
+// @auth "GetWorkflow" "workflow_org" {UserID: currentUser.ID, ResourceID: workflow.ID} "Forbidden"
+// @response { workflow: workflow }
+func GetWorkflow() {}

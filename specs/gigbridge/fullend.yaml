@@ -1,0 +1,28 @@
+apiVersion: fullend/v1
+kind: Project
+
+metadata:
+  name: gigbridge
+
+backend:
+  lang: go
+  framework: gin
+  module: github.com/gigbridge/api
+  middleware:
+    - bearerAuth
+  auth:
+    secret_env: JWT_SECRET
+    claims:
+      ID: user_id
+      Email: email
+      Role: role
+
+frontend:
+  lang: typescript
+  framework: react
+  bundler: vite
+  name: gigbridge-web
+
+deploy:
+  image: ghcr.io/gigbridge/api
+  domain: gigbridge.example.com

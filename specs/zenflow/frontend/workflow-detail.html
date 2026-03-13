@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>ZenFlow - Workflow Detail</title>
+</head>
+<body>
+  <section data-fetch="GetWorkflow" data-param-id="route.id">
+    <h2 data-bind="workflow.title"></h2>
+    <p data-bind="workflow.trigger_event"></p>
+    <span data-bind="workflow.status"></span>
+
+    <button data-action="ActivateWorkflow" data-state="workflow.status === 'draft'">Activate</button>
+    <button data-action="PauseWorkflow" data-state="workflow.status === 'active'">Pause</button>
+    <button data-action="ArchiveWorkflow" data-state="workflow.status === 'active'">Archive</button>
+    <button data-action="ExecuteWorkflow" data-state="workflow.status === 'active'">Execute</button>
+  </section>
+</body>
+</html>

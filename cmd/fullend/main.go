@@ -17,6 +17,7 @@ Commands:
   gen        [--skip kind,...] <specs-dir> <artifacts-dir> Generate code from specs
   gen-model  <openapi-source> <output-dir>                 Generate Go model from external OpenAPI
   status     <specs-dir>                                   Show SSOT status summary
+  chain      <operationId> <specs-dir>                     Trace feature chain for an operation
 
 Skip kinds: openapi, ddl, ssac, model, stml, states, policy, scenario, func, terraform
 `
@@ -51,6 +52,12 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
+	case "chain":
+		if len(os.Args) < 4 {
+			fmt.Fprintln(os.Stderr, "Usage: fullend chain <operationId> <specs-dir>")
+			os.Exit(2)
+		}
+		runChain(os.Args[2], os.Args[3])
 	case "status":
 		if len(os.Args) < 3 {
 			fmt.Fprintln(os.Stderr, "Usage: fullend status <specs-dir>")
@@ -117,6 +124,19 @@ func runStatus(specsDir string) {
 
 	lines := orchestrator.Status(specsDir, detected)
 	orchestrator.PrintStatus(os.Stdout, lines)
+}
+
+func runChain(operationID, specsDir string) {
+	links, err := orchestrator.Chain(specsDir, operationID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	rlinks := make([]reporter.ChainLink, len(links))
+	for i, l := range links {
+		rlinks[i] = reporter.ChainLink{Kind: l.Kind, File: l.File, Line: l.Line, Summary: l.Summary}
+	}
+	reporter.PrintChain(os.Stdout, operationID, rlinks)
 }
 
 func runGen(specsDir, artifactsDir string, skipKinds map[orchestrator.SSOTKind]bool) {

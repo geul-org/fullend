@@ -1,0 +1,6 @@
+package service
+
+// @get Gig gig = Gig.FindByID({ID: request.id})
+// @empty gig "Gig not found"
+// @response { gig: gig }
+func GetGig() {}

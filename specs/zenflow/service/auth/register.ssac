@@ -1,0 +1,10 @@
+package service
+
+import "github.com/geul-org/fullend/pkg/auth"
+
+// @get Organization org = Organization.FindByID({ID: request.org_id})
+// @empty org "Organization not found"
+// @call auth.HashPasswordResponse hp = auth.HashPassword({Password: request.password})
+// @post User user = User.Create({OrgID: org.ID, Email: request.email, PasswordHash: hp.HashedPassword, Role: request.role})
+// @response { user: user }
+func Register() {}
