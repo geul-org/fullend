@@ -17,11 +17,12 @@ import (
 
 // ddlColumn represents a column parsed from a CREATE TABLE statement.
 type ddlColumn struct {
-	Name    string // e.g. "instructor_id"
-	GoName  string // e.g. "InstructorID"
-	GoType  string // e.g. "int64"
-	FKTable string // e.g. "users" — REFERENCES target table (empty if no FK)
-	NotNull bool   // true if column has NOT NULL or is PRIMARY KEY
+	Name      string // e.g. "instructor_id"
+	GoName    string // e.g. "InstructorID"
+	GoType    string // e.g. "int64"
+	FKTable   string // e.g. "users" — REFERENCES target table (empty if no FK)
+	NotNull   bool   // true if column has NOT NULL or is PRIMARY KEY
+	Sensitive bool   // true if column has -- @sensitive annotation → json:"-"
 }
 
 // includeMapping represents a resolved x-include → DDL FK mapping (forward FK only).
@@ -213,7 +214,11 @@ func generateTypesFile(modelDir string, models []string, tables map[string]*ddlT
 		}
 		b.WriteString(fmt.Sprintf("type %s struct {\n", m))
 		for _, col := range t.Columns {
-			b.WriteString(fmt.Sprintf("\t%-12s %s `json:\"%s\"`\n", col.GoName, col.GoType, col.Name))
+			jsonTag := col.Name
+			if col.Sensitive {
+				jsonTag = "-"
+			}
+			b.WriteString(fmt.Sprintf("\t%-12s %s `json:\"%s\"`\n", col.GoName, col.GoType, jsonTag))
 		}
 		if includes, ok := includesByModel[m]; ok && len(includes) > 0 {
 			b.WriteString("\n\t// Include fields\n")
@@ -461,6 +466,9 @@ func generateMethodFromIface(b *strings.Builder, implName, modelName string, m i
 		b.WriteString("\t\t}\n")
 		b.WriteString("\t\titems = append(items, *v)\n")
 		b.WriteString("\t}\n")
+		b.WriteString("\tif err := rows.Err(); err != nil {\n")
+		b.WriteString("\t\treturn nil, err\n")
+		b.WriteString("\t}\n")
 		// Include loading — always applied (x-include is codegen metadata, not runtime option).
 		for _, inc := range includes {
 			helperName := "include" + strcase.ToGoPascal(inc.IncludeName)
@@ -490,6 +498,9 @@ func generateMethodFromIface(b *strings.Builder, implName, modelName string, m i
 		b.WriteString("\t\t\treturn nil, err\n")
 		b.WriteString("\t\t}\n")
 		b.WriteString("\t\titems = append(items, *v)\n")
+		b.WriteString("\t}\n")
+		b.WriteString("\tif err := rows.Err(); err != nil {\n")
+		b.WriteString("\t\treturn nil, err\n")
 		b.WriteString("\t}\n")
 		b.WriteString("\treturn items, nil\n")
 		b.WriteString("}\n")
@@ -640,13 +651,15 @@ func parseDDLFiles(specsDir string) map[string]*ddlTable {
 
 			upperLine := strings.ToUpper(line)
 			notNull := strings.Contains(upperLine, "NOT NULL") || strings.Contains(upperLine, "PRIMARY KEY")
+			sensitive := strings.Contains(line, "@sensitive")
 
 			table.Columns = append(table.Columns, ddlColumn{
-				Name:    colName,
-				GoName:  snakeToGo(colName),
-				GoType:  sqlTypeToGo(sqlType),
-				FKTable: fkTable,
-				NotNull: notNull,
+				Name:      colName,
+				GoName:    snakeToGo(colName),
+				GoType:    sqlTypeToGo(sqlType),
+				FKTable:   fkTable,
+				NotNull:   notNull,
+				Sensitive: sensitive,
 			})
 		}
 

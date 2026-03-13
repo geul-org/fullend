@@ -743,6 +743,44 @@ DDL column names that are Go reserved words (`type`, `range`, `select`, `map`, e
 | `range` | `date_range`, `price_range` |
 | `select` | `selected`, `selection` |
 
+### @sensitive / @nosensitive Annotation
+
+DDL 컬럼에 `-- @sensitive` 주석을 붙이면 해당 컬럼의 JSON 태그가 `json:"-"`로 생성되어 API 응답에서 제외된다.
+
+```sql
+CREATE TABLE users (
+    id BIGSERIAL PRIMARY KEY,
+    email VARCHAR(255) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL, -- @sensitive
+    name VARCHAR(255) NOT NULL
+);
+```
+
+생성 결과:
+```go
+type User struct {
+    ID           int64  `json:"id"`
+    Email        string `json:"email"`
+    PasswordHash string `json:"-"`       // @sensitive → 응답에서 제외
+    Name         string `json:"name"`
+}
+```
+
+**crosscheck WARNING**: 컬럼명에 `password`, `secret`, `hash`, `token` 패턴이 포함되었으나 `@sensitive`가 없으면 WARNING을 출력한다.
+
+민감하지 않은 컬럼이 패턴에 걸리는 경우(예: `file_hash`, `commit_hash`) `-- @nosensitive`로 WARNING을 억제한다.
+
+```sql
+    file_hash VARCHAR(255) NOT NULL,     -- @nosensitive
+    password_hash VARCHAR(255) NOT NULL, -- @sensitive
+```
+
+| 어노테이션 | 효과 |
+|---|---|
+| `-- @sensitive` | `json:"-"` 생성, WARNING 미출력 |
+| `-- @nosensitive` | `json:"column_name"` 유지, WARNING 억제 |
+| (없음) + 패턴 매칭 | `json:"column_name"` 유지, WARNING 출력 |
+
 ### FK DEFAULT 0 Pattern (Sentinel Record)
 
 To avoid nullable FKs, use `NOT NULL DEFAULT 0`. In this case, the referenced table **must have an id=0 sentinel record**. Otherwise, FK constraint violations will cause INSERT failures.

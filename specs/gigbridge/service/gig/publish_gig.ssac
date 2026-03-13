@@ -5,6 +5,6 @@ package service
 // @auth "PublishGig" "gig" {UserID: currentUser.ID, ResourceID: gig.ID} "Forbidden"
 // @state gig {status: gig.Status} "PublishGig" "Cannot transition"
 // @put Gig.UpdateStatus({Status: "open", ID: gig.ID})
-// @get Gig updatedGig = Gig.FindByID({ID: gig.ID})
+// @get! Gig updatedGig = Gig.FindByID({ID: gig.ID})
 // @response { gig: updatedGig }
 func PublishGig() {}

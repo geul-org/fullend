@@ -27,6 +27,8 @@ type CrossValidateInput struct {
 	Claims           map[string]string // from fullend.yaml backend.auth.claims (FieldName → claim key)
 	QueueBackend     string            // from fullend.yaml queue.backend ("postgres", "memory", "")
 	AuthzPackage     string            // from fullend.yaml authz.package ("" = default pkg/authz)
+	SensitiveCols    map[string]map[string]bool // @sensitive columns per table (table → column → true)
+	NoSensitiveCols  map[string]map[string]bool // @nosensitive columns per table (suppress WARNING)
 }
 
 // Run executes all cross-validation rules and returns collected errors.
@@ -91,6 +93,11 @@ func Run(input *CrossValidateInput) []CrossError {
 	// Authz: @auth inputs ↔ CheckRequest fields
 	if input.ServiceFuncs != nil {
 		errs = append(errs, CheckAuthz(input.ServiceFuncs, input.AuthzPackage)...)
+	}
+
+	// DDL: sensitive column name pattern without @sensitive annotation
+	if input.SymbolTable != nil {
+		errs = append(errs, CheckSensitiveColumns(input.SymbolTable, input.SensitiveCols, input.NoSensitiveCols)...)
 	}
 
 	return errs

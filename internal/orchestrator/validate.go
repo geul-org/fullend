@@ -239,6 +239,9 @@ func runCrossValidate(root string, doc *openapi3.T, st *ssacvalidator.SymbolTabl
 	// Parse @archived tags from DDL files.
 	archived, _ := crosscheck.ParseArchived(filepath.Join(root, "db"))
 
+	// Parse @sensitive / @nosensitive tags from DDL files.
+	sensitiveCols, noSensitiveCols, _ := crosscheck.ParseSensitive(filepath.Join(root, "db"))
+
 	var queueBackend string
 	if projConfig != nil && projConfig.Queue != nil {
 		queueBackend = projConfig.Queue.Backend
@@ -264,6 +267,8 @@ func runCrossValidate(root string, doc *openapi3.T, st *ssacvalidator.SymbolTabl
 		Claims:           claims,
 		QueueBackend:     queueBackend,
 		AuthzPackage:     authzPackage,
+		SensitiveCols:    sensitiveCols,
+		NoSensitiveCols:  noSensitiveCols,
 	}
 
 	cerrs := crosscheck.Run(input)

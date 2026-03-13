@@ -5,6 +5,6 @@ package service
 // @auth "SubmitWork" "gig_assignee" {UserID: currentUser.ID, ResourceID: gig.ID} "Forbidden"
 // @state gig {status: gig.Status} "SubmitWork" "Cannot transition"
 // @put Gig.UpdateStatus({Status: "under_review", ID: gig.ID})
-// @get Gig updatedGig = Gig.FindByID({ID: gig.ID})
+// @get! Gig updatedGig = Gig.FindByID({ID: gig.ID})
 // @response { gig: updatedGig }
 func SubmitWork() {}

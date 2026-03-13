@@ -14,6 +14,6 @@ import "github.com/gigbridge/api/internal/billing"
 // @put Gig.UpdateFreelancerID({FreelancerID: proposal.FreelancerID, ID: gig.ID})
 // @call billing.HoldEscrowResponse holdResult = billing.HoldEscrow({GigID: gig.ID, Amount: gig.Budget, ClientID: gig.ClientID})
 // @post Transaction tx = Transaction.Create({GigID: gig.ID, TxType: "hold", Amount: gig.Budget})
-// @get Proposal updatedProposal = Proposal.FindByID({ID: proposal.ID})
+// @get! Proposal updatedProposal = Proposal.FindByID({ID: proposal.ID})
 // @response { proposal: updatedProposal }
 func AcceptProposal() {}
