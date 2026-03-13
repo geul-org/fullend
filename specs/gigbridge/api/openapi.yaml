@@ -151,7 +151,7 @@ paths:
               schema:
                 type: object
                 properties:
-                  AccessToken:
+                  access_token:
                     type: string
         '404':
           description: User not found
