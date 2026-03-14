@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/ettle/strcase"
+	"github.com/jinzhu/inflection"
 
 	ssacparser "github.com/geul-org/fullend/internal/ssac/parser"
 	ssacvalidator "github.com/geul-org/fullend/internal/ssac/validator"
@@ -83,17 +84,7 @@ func buildReferencedTables(funcs []ssacparser.ServiceFunc) map[string]bool {
 // tableToModel converts a DDL table name to a model name.
 // "courses" → "Course", "enrollments" → "Enrollment"
 func tableToModel(table string) string {
-	// Singularize.
-	name := table
-	if strings.HasSuffix(name, "ies") {
-		name = name[:len(name)-3] + "y"
-	} else if strings.HasSuffix(name, "sses") || strings.HasSuffix(name, "xes") {
-		name = name[:len(name)-2]
-	} else if strings.HasSuffix(name, "s") {
-		name = name[:len(name)-1]
-	}
-	// PascalCase.
-	return snakeToPascal(name)
+	return snakeToPascal(inflection.Singular(table))
 }
 
 // snakeToPascal converts snake_case to PascalCase with Go acronym handling.

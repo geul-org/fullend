@@ -133,8 +133,11 @@ Append `!` to suppress WARNINGs: `@delete!`, `@response!`
 
 ### Args Format
 
-`source.Field` or `"literal"`:
+`source.Field`, `"string literal"`, or Go literal value:
 - `request.course_id`, `course.InstructorID`, `currentUser.ID`, `"cancelled"`
+- Numeric: `1`, `42`, `3.14`, `-1`
+- Boolean: `true`, `false`
+- Nil: `nil`
 
 Reserved sources: `request`, `currentUser`, `query`, `message` (subscribe only)
 
@@ -320,6 +323,10 @@ SSaC reference: `// @call billing.HoldEscrowResponse r = billing.HoldEscrow({Gig
 
 `@call func` allows only computation/judgment logic. Forbidden imports: `database/sql`, `net/http`, `io`, `bufio`, etc. Use `@model` for DB/file I/O.
 `os` is allowed (for `os.Getenv()` — func reads its own config).
+
+### Import Path Convention
+
+SSaC `@call` import 경로는 `internal/<pkg>` 형식으로 작성한다. Func 스펙은 `specs/<project>/func/<pkg>/`에 위치하지만, 코드 생성 시 `artifacts/<project>/backend/internal/<pkg>/`로 복사된다.
 
 ### Fallback Chain
 

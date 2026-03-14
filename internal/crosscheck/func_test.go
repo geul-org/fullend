@@ -269,11 +269,11 @@ func TestCheckFuncs_InputTypeMismatch(t *testing.T) {
 
 	st := &ssacvalidator.SymbolTable{
 		DDLTables: map[string]ssacvalidator.DDLTable{
-			"Gig": {
+			"gigs": {
 				Columns: map[string]string{
-					"ID":       "int64",
-					"Budget":   "int64",
-					"ClientID": "int64",
+					"id":        "int64",
+					"budget":    "int64",
+					"client_id": "int64",
 				},
 			},
 		},
@@ -324,11 +324,11 @@ func TestCheckFuncs_InputTypeMatch(t *testing.T) {
 
 	st := &ssacvalidator.SymbolTable{
 		DDLTables: map[string]ssacvalidator.DDLTable{
-			"Gig": {
+			"gigs": {
 				Columns: map[string]string{
-					"ID":       "int64",
-					"Budget":   "int64",
-					"ClientID": "int64",
+					"id":        "int64",
+					"budget":    "int64",
+					"client_id": "int64",
 				},
 			},
 		},

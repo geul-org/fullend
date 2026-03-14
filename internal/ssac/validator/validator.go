@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jinzhu/inflection"
+
 	"github.com/geul-org/fullend/internal/ssac/parser"
 )
 
@@ -640,7 +642,7 @@ func resolveCallInputType(val string, resultModels map[string]string, st *Symbol
 	if !ok {
 		return ""
 	}
-	tableName := toSnakeCase(modelName) + "s"
+	tableName := inflection.Plural(toSnakeCase(modelName))
 	snakeName := toSnakeCase(field)
 	if table, ok := st.DDLTables[tableName]; ok {
 		if goType, ok := table.Columns[snakeName]; ok {
@@ -650,7 +652,7 @@ func resolveCallInputType(val string, resultModels map[string]string, st *Symbol
 	// ID 패턴 fallback
 	if strings.HasSuffix(field, "ID") {
 		refModel := field[:len(field)-2]
-		refTable := toSnakeCase(refModel) + "s"
+		refTable := inflection.Plural(toSnakeCase(refModel))
 		if table, ok := st.DDLTables[refTable]; ok {
 			if goType, ok := table.Columns["id"]; ok {
 				return goType
@@ -743,7 +745,7 @@ func findColumnTable(snakeCol, model string, st *SymbolTable) (string, bool) {
 	// 모델명에서 테이블명 유추: "Transaction.Create" → "transactions"
 	if model != "" {
 		parts := strings.SplitN(model, ".", 2)
-		tableName := toSnakeCase(parts[0]) + "s"
+		tableName := inflection.Plural(toSnakeCase(parts[0]))
 		if table, ok := st.DDLTables[tableName]; ok {
 			if _, ok := table.Columns[snakeCol]; ok {
 				return tableName, true

@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"github.com/ettle/strcase"
+	"github.com/jinzhu/inflection"
+
 	"github.com/geul-org/fullend/internal/contract"
 	ssacparser "github.com/geul-org/fullend/internal/ssac/parser"
 )
@@ -900,21 +902,7 @@ func finishQuery(q *sqlcQuery, sql string, paramRe, insertColRe, updateSetRe *re
 // singularize converts a plural table name to a singular model name.
 // Rules: 'ies'-> 'y', 'sses'-> 'ss', 'xes'-> 'x', default strip trailing 's'.
 func singularize(name string) string {
-	lower := strings.ToLower(name)
-	var singular string
-	switch {
-	case strings.HasSuffix(lower, "sses"):
-		singular = lower[:len(lower)-2] // sses -> ss
-	case strings.HasSuffix(lower, "xes"):
-		singular = lower[:len(lower)-2] // xes -> x
-	case strings.HasSuffix(lower, "ies"):
-		singular = lower[:len(lower)-3] + "y" // ies -> y
-	case strings.HasSuffix(lower, "s"):
-		singular = lower[:len(lower)-1] // s -> (remove)
-	default:
-		singular = lower
-	}
-	// Capitalize first letter.
+	singular := inflection.Singular(strings.ToLower(name))
 	if len(singular) == 0 {
 		return name
 	}

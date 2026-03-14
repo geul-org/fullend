@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jinzhu/inflection"
+
 	ssacparser "github.com/geul-org/fullend/internal/ssac/parser"
 	ssacvalidator "github.com/geul-org/fullend/internal/ssac/validator"
 )
@@ -138,9 +140,5 @@ func checkParamTypes(seq ssacparser.Sequence, st *ssacvalidator.SymbolTable, ctx
 // modelToTable converts a model name to a table name.
 // e.g. "User" → "users", "Reservation" → "reservations", "Room" → "rooms"
 func modelToTable(model string) string {
-	snake := pascalToSnake(model)
-	if strings.HasSuffix(snake, "s") {
-		return snake
-	}
-	return snake + "s"
+	return inflection.Plural(pascalToSnake(model))
 }

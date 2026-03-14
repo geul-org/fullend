@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/ettle/strcase"
+	"github.com/jinzhu/inflection"
 	ssacparser "github.com/geul-org/fullend/internal/ssac/parser"
 	"gopkg.in/yaml.v3"
 )
@@ -326,16 +327,8 @@ func stripModelPrefix(queryName, modelName string) string {
 // sqlFileToModel은 "reservations.sql" → "Reservation" 변환한다.
 func sqlFileToModel(filename string) string {
 	name := strings.TrimSuffix(filename, ".sql")
-	// 단수화: 간단한 규칙 (es → 제거, s → 제거)
-	if strings.HasSuffix(name, "ies") {
-		name = name[:len(name)-3] + "y"
-	} else if strings.HasSuffix(name, "sses") || strings.HasSuffix(name, "xes") {
-		name = name[:len(name)-2]
-	} else if strings.HasSuffix(name, "s") {
-		name = name[:len(name)-1]
-	}
-	// PascalCase
-	return strings.ToUpper(name[:1]) + name[1:]
+	singular := inflection.Singular(name)
+	return strings.ToUpper(singular[:1]) + singular[1:]
 }
 
 // loadOpenAPI는 openapi.yaml에서 operationId별 request/response 필드를 추출한다.

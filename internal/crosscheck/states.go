@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/ettle/strcase"
+	"github.com/jinzhu/inflection"
 	"github.com/getkin/kin-openapi/openapi3"
 
 	"github.com/geul-org/fullend/internal/statemachine"
@@ -192,19 +193,7 @@ func CheckStates(diagrams []*statemachine.StateDiagram, funcs []ssacparser.Servi
 // diagramIDToTable converts a diagram ID to a DDL table name.
 // "course" → "courses"
 func diagramIDToTable(id string) string {
-	// Simple pluralization.
-	if len(id) == 0 {
-		return id
-	}
-	last := id[len(id)-1]
-	switch {
-	case last == 'y':
-		return id[:len(id)-1] + "ies"
-	case last == 's' || last == 'x':
-		return id + "es"
-	default:
-		return id + "s"
-	}
+	return inflection.Plural(id)
 }
 
 // pascalToSnakeState converts PascalCase to snake_case.

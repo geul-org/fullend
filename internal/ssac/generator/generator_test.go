@@ -11,7 +11,7 @@ import (
 
 func mustGenerate(t *testing.T, sf parser.ServiceFunc, st *validator.SymbolTable) string {
 	t.Helper()
-	code, err := GenerateFunc(sf, st)
+	code, err := GenerateFunc(sf, st, nil)
 	if err != nil {
 		t.Fatalf("GenerateFunc failed: %v", err)
 	}

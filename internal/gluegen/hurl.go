@@ -10,6 +10,7 @@ import (
 
 	"github.com/ettle/strcase"
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/jinzhu/inflection"
 
 	"github.com/geul-org/fullend/internal/policy"
 	"github.com/geul-org/fullend/internal/statemachine"
@@ -311,7 +312,7 @@ func buildResourceFirstTransition(diagrams []*statemachine.StateDiagram, transit
 	result := make(map[string]int)
 	for _, d := range diagrams {
 		// Pluralize diagram ID: "gig" → "gigs".
-		resource := d.ID + "s"
+		resource := inflection.Plural(d.ID)
 		for _, t := range d.Transitions {
 			if t.From == d.InitialState {
 				if ord, ok := transitionOrder[t.Event]; ok {

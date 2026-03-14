@@ -295,6 +295,10 @@ func genSSaC(profile *TargetProfile, specsDir, artifactsDir string, parsed *Pars
 		return steps
 	}
 
+	if gt, ok := profile.Backend.(*ssacgenerator.GoTarget); ok {
+		gt.FuncSpecs = append(parsed.PkgFuncSpecs, parsed.FuncSpecs...)
+	}
+
 	step := reporter.StepResult{Name: "ssac-gen"}
 	if err := ssacgenerator.GenerateWith(profile.Backend, funcs, serviceOutDir, genST); err != nil {
 		step.Status = reporter.Fail

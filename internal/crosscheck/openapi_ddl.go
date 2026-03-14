@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/ettle/strcase"
+	"github.com/jinzhu/inflection"
 	"github.com/getkin/kin-openapi/openapi3"
 
 	ssacparser "github.com/geul-org/fullend/internal/ssac/parser"
@@ -314,11 +315,12 @@ func findTableWithColumn(col string, st *ssacvalidator.SymbolTable) string {
 
 // resolveTableName finds the DDL table for a resource name.
 func resolveTableName(resource string, st *ssacvalidator.SymbolTable) string {
+	snake := pascalToSnake(resource)
 	candidates := []string{
-		strings.ToLower(resource) + "s",
+		inflection.Plural(strings.ToLower(resource)),
 		strings.ToLower(resource),
-		pascalToSnake(resource) + "s",
-		pascalToSnake(resource),
+		inflection.Plural(snake),
+		snake,
 	}
 	for _, c := range candidates {
 		if _, ok := st.DDLTables[c]; ok {

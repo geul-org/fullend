@@ -6,18 +6,19 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/geul-org/fullend/internal/funcspec"
 	"github.com/geul-org/fullend/internal/ssac/parser"
 	"github.com/geul-org/fullend/internal/ssac/validator"
 )
 
 // Generate는 []ServiceFunc를 받아 outDir에 Go 파일을 생성한다.
-func Generate(funcs []parser.ServiceFunc, outDir string, st *validator.SymbolTable) error {
-	return GenerateWith(DefaultTarget(), funcs, outDir, st)
+func Generate(funcs []parser.ServiceFunc, outDir string, st *validator.SymbolTable, funcSpecs []funcspec.FuncSpec) error {
+	return GenerateWith(&GoTarget{FuncSpecs: funcSpecs}, funcs, outDir, st)
 }
 
 // GenerateFunc는 단일 ServiceFunc의 Go 코드를 생성한다.
-func GenerateFunc(sf parser.ServiceFunc, st *validator.SymbolTable) ([]byte, error) {
-	return DefaultTarget().GenerateFunc(sf, st)
+func GenerateFunc(sf parser.ServiceFunc, st *validator.SymbolTable, funcSpecs []funcspec.FuncSpec) ([]byte, error) {
+	return (&GoTarget{FuncSpecs: funcSpecs}).GenerateFunc(sf, st)
 }
 
 // GenerateModelInterfaces는 심볼 테이블과 SSaC spec을 교차하여 Model interface를 생성한다.

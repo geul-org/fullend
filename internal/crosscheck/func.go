@@ -130,7 +130,8 @@ func CheckFuncs(
 						continue
 					}
 					// Type validation.
-					valueType := resolveInputValueType(inputValue, definedVars, symbolTable, openAPIDoc, sf.Name)
+					allSpecs := append(fullendPkgSpecs, projectFuncSpecs...)
+				valueType := resolveInputValueType(inputValue, definedVars, symbolTable, openAPIDoc, sf.Name, allSpecs)
 					if valueType != "" && !typesCompatible(valueType, reqType) {
 						errs = append(errs, CrossError{
 							Rule:    "Func ↔ SSaC",
@@ -166,8 +167,11 @@ func CheckFuncs(
 				if source == "request" || source == "currentUser" {
 					continue
 				}
-				// Check if it's a literal (quoted string).
+				// Check if it's a literal (quoted string, numeric, boolean, nil).
 				if strings.HasPrefix(value, "\"") {
+					continue
+				}
+				if ssacparser.IsLiteral(value) {
 					continue
 				}
 				if _, ok := definedVars[source]; !ok {
@@ -186,16 +190,27 @@ func CheckFuncs(
 }
 
 // resolveInputValueType resolves the Go type of an Input value string.
-// Patterns: "request.Field" → OpenAPI, "var.Field" → DDL, "\"literal\"" → string, "currentUser.*" / "config.*" → skip.
-func resolveInputValueType(value string, definedVars map[string]string, st *ssacvalidator.SymbolTable, doc *openapi3.T, funcName string) string {
+// Patterns: "request.Field" → OpenAPI, "var.Field" → DDL/FuncResponse, "\"literal\"" → string,
+// bare variable → definedVars type, numeric/bool/nil literal → inferred type, "currentUser.*" → skip.
+func resolveInputValueType(value string, definedVars map[string]string, st *ssacvalidator.SymbolTable, doc *openapi3.T, funcName string, funcSpecs []funcspec.FuncSpec) string {
 	// Literal string.
 	if strings.HasPrefix(value, "\"") {
 		return "string"
 	}
 
+	// Numeric/boolean/nil literal.
+	if ssacparser.IsLiteral(value) {
+		return inferLiteralType(value)
+	}
+
+	// Bare variable (no dot) → return type from definedVars.
 	parts := strings.SplitN(value, ".", 2)
 	if len(parts) < 2 {
-		return ""
+		typeName, ok := definedVars[value]
+		if !ok {
+			return ""
+		}
+		return typeName
 	}
 	source, field := parts[0], parts[1]
 
@@ -209,12 +224,49 @@ func resolveInputValueType(value string, definedVars map[string]string, st *ssac
 		return ""
 	}
 
-	// variable.Field → DDL via definedVars.
+	// variable.Field → DDL or FuncResponse via definedVars.
 	typeName, ok := definedVars[source]
 	if !ok {
 		return ""
 	}
-	return resolveDDLColumnType(st, typeName, field)
+
+	// DDL model field: modelToTable로 변환 후 조회.
+	tableName := modelToTable(typeName)
+	if goType := resolveDDLColumnType(st, tableName, field); goType != "" {
+		return goType
+	}
+
+	// Func Response field fallback.
+	return resolveFuncResponseFieldType(funcSpecs, typeName, field)
+}
+
+// inferLiteralType infers the Go type of a literal value.
+func inferLiteralType(s string) string {
+	if s == "true" || s == "false" {
+		return "bool"
+	}
+	if s == "nil" {
+		return ""
+	}
+	if strings.Contains(s, ".") {
+		return "float64"
+	}
+	return "int"
+}
+
+// resolveFuncResponseFieldType looks up a field type from func spec Response fields.
+// Works when the SSaC result type follows the "<FuncName>Response" convention.
+func resolveFuncResponseFieldType(specs []funcspec.FuncSpec, respTypeName, field string) string {
+	for _, spec := range specs {
+		if spec.Name+"Response" == respTypeName {
+			for _, f := range spec.ResponseFields {
+				if f.Name == field {
+					return f.Type
+				}
+			}
+		}
+	}
+	return ""
 }
 
 // resolveDDLColumnType looks up a column's Go type from the SymbolTable.
@@ -225,17 +277,18 @@ func resolveDDLColumnType(st *ssacvalidator.SymbolTable, tableName, columnName s
 	}
 	table, ok := st.DDLTables[tableName]
 	if !ok {
-		// Try lowercase.
-		table, ok = st.DDLTables[strings.ToLower(tableName)]
-		if !ok {
-			return ""
-		}
+		return ""
 	}
-	// Columns is map[string]string where key=column name, value=Go type.
-	// Try exact match first, then case-insensitive.
+	// 1) Exact match.
 	if goType, ok := table.Columns[columnName]; ok {
 		return goType
 	}
+	// 2) PascalCase→snake_case: "OrgID" → "org_id".
+	snakeCol := toSnakeCase(columnName)
+	if goType, ok := table.Columns[snakeCol]; ok {
+		return goType
+	}
+	// 3) Case-insensitive fallback.
 	for colName, goType := range table.Columns {
 		if strings.EqualFold(colName, columnName) {
 			return goType

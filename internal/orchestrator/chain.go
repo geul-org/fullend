@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/jinzhu/inflection"
 
 	"github.com/geul-org/fullend/internal/contract"
 	"github.com/geul-org/fullend/internal/funcspec"
@@ -201,7 +202,7 @@ func traceArtifacts(artifactsDir, operationID string, sf *ssacparser.ServiceFunc
 		for _, f := range funcs {
 			if f.Function == methodName && strings.Contains(f.File, "/model/") {
 				// Check if it's for this model (DDL table).
-				tableName := strings.ToLower(modelName) + "s"
+				tableName := inflection.Plural(strings.ToLower(modelName))
 				if strings.Contains(f.Directive.SSOT, tableName) {
 					links = append(links, ChainLink{
 						Kind:      "Model",
@@ -287,7 +288,7 @@ func traceDDL(sf *ssacparser.ServiceFunc, st *ssacvalidator.SymbolTable, specsDi
 		if len(parts) < 2 {
 			continue
 		}
-		tableName := toSnakeCase(parts[0]) + "s"
+		tableName := inflection.Plural(toSnakeCase(parts[0]))
 		if _, ok := st.DDLTables[tableName]; ok {
 			tables[tableName] = true
 		}

@@ -6,9 +6,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ettle/strcase"
+	"github.com/jinzhu/inflection"
+
 	"github.com/geul-org/fullend/internal/ssac/parser"
 	"github.com/geul-org/fullend/internal/ssac/validator"
-	"github.com/ettle/strcase"
 )
 
 // --- Model 인터페이스 파생 ---
@@ -190,7 +192,7 @@ func resolveArgParamType(a parser.Arg, modelName string, st *validator.SymbolTab
 
 	// source.Field → source 테이블의 field 컬럼 조회
 	if a.Source != "" && a.Source != "request" && a.Source != "currentUser" {
-		refTable := toSnakeCase(a.Source) + "s"
+		refTable := inflection.Plural(toSnakeCase(a.Source))
 		refCol := toSnakeCase(a.Field)
 		if table, ok := st.DDLTables[refTable]; ok {
 			if goType, ok := table.Columns[refCol]; ok {
@@ -202,7 +204,7 @@ func resolveArgParamType(a parser.Arg, modelName string, st *validator.SymbolTab
 	snakeName := toSnakeCase(a.Field)
 
 	// 해당 모델 테이블
-	tableName := toSnakeCase(modelName) + "s"
+	tableName := inflection.Plural(toSnakeCase(modelName))
 	if table, ok := st.DDLTables[tableName]; ok {
 		if goType, ok := table.Columns[snakeName]; ok {
 			return goType
@@ -212,7 +214,7 @@ func resolveArgParamType(a parser.Arg, modelName string, st *validator.SymbolTab
 	// {Model}ID 패턴
 	if strings.HasSuffix(a.Field, "ID") {
 		refModel := a.Field[:len(a.Field)-2]
-		refTable := toSnakeCase(refModel) + "s"
+		refTable := inflection.Plural(toSnakeCase(refModel))
 		if table, ok := st.DDLTables[refTable]; ok {
 			if goType, ok := table.Columns["id"]; ok {
 				return goType
@@ -247,7 +249,7 @@ func resolveInputParamType(val string, modelName string, st *validator.SymbolTab
 
 	// source.Field → source 테이블의 field 컬럼 조회
 	if source != "request" && source != "currentUser" {
-		refTable := toSnakeCase(source) + "s"
+		refTable := inflection.Plural(toSnakeCase(source))
 		refCol := toSnakeCase(field)
 		if table, ok := st.DDLTables[refTable]; ok {
 			if goType, ok := table.Columns[refCol]; ok {
@@ -259,7 +261,7 @@ func resolveInputParamType(val string, modelName string, st *validator.SymbolTab
 	snakeName := toSnakeCase(field)
 
 	// 해당 모델 테이블
-	tableName := toSnakeCase(modelName) + "s"
+	tableName := inflection.Plural(toSnakeCase(modelName))
 	if table, ok := st.DDLTables[tableName]; ok {
 		if goType, ok := table.Columns[snakeName]; ok {
 			return goType
@@ -269,7 +271,7 @@ func resolveInputParamType(val string, modelName string, st *validator.SymbolTab
 	// {Model}ID 패턴
 	if strings.HasSuffix(field, "ID") {
 		refModel := field[:len(field)-2]
-		refTable := toSnakeCase(refModel) + "s"
+		refTable := inflection.Plural(toSnakeCase(refModel))
 		if table, ok := st.DDLTables[refTable]; ok {
 			if goType, ok := table.Columns["id"]; ok {
 				return goType
@@ -293,7 +295,7 @@ func resolveKeyParamType(key, modelName string, st *validator.SymbolTable) strin
 	snakeName := toSnakeCase(key)
 
 	// Model's own table first.
-	tableName := toSnakeCase(modelName) + "s"
+	tableName := inflection.Plural(toSnakeCase(modelName))
 	if table, ok := st.DDLTables[tableName]; ok {
 		if goType, ok := table.Columns[snakeName]; ok {
 			return goType
@@ -303,7 +305,7 @@ func resolveKeyParamType(key, modelName string, st *validator.SymbolTable) strin
 	// {Model}ID pattern.
 	if strings.HasSuffix(key, "ID") {
 		refModel := key[:len(key)-2]
-		refTable := toSnakeCase(refModel) + "s"
+		refTable := inflection.Plural(toSnakeCase(refModel))
 		if table, ok := st.DDLTables[refTable]; ok {
 			if goType, ok := table.Columns["id"]; ok {
 				return goType

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"go/format"
+	"strings"
 
 	"github.com/geul-org/fullend/internal/ssac/parser"
 	"github.com/geul-org/fullend/internal/ssac/validator"
@@ -69,11 +70,21 @@ func (g *GoTarget) generateHTTPFunc(sf parser.ServiceFunc, st *validator.SymbolT
 	}
 
 	resultTypes := map[string]string{}
+	varSources := map[string]varSource{}
 	for _, seq := range sf.Sequences {
 		if seq.Result != nil {
 			resultTypes[seq.Result.Var] = seq.Result.Type
+			if seq.Type == parser.SeqCall {
+				parts := strings.SplitN(seq.Model, ".", 2)
+				if len(parts) == 2 {
+					varSources[seq.Result.Var] = varSource{Kind: "func", ModelName: parts[1]}
+				}
+			} else {
+				varSources[seq.Result.Var] = varSource{Kind: "ddl", ModelName: seq.Result.Type}
+			}
 		}
 	}
+	resolver := &FieldTypeResolver{vars: varSources, st: st, fs: g.FuncSpecs}
 
 	errDeclared := hasConversionErr(requestParams)
 	if useTx {
@@ -91,7 +102,7 @@ func (g *GoTarget) generateHTTPFunc(sf parser.ServiceFunc, st *validator.SymbolT
 			bodyBuf.WriteString("\t}\n\n")
 			committed = true
 		}
-		data := buildTemplateData(seq, &errDeclared, declaredVars, resultTypes, st, sf.Name, useTx)
+		data := buildTemplateData(seq, &errDeclared, declaredVars, resultTypes, st, sf.Name, useTx, resolver)
 		if data.HasTotal {
 			funcHasTotal = true
 		}
@@ -160,11 +171,21 @@ func (g *GoTarget) generateSubscribeFunc(sf parser.ServiceFunc, st *validator.Sy
 	fmt.Fprintf(&bodyBuf, "func (h *Handler) %s(ctx context.Context, message %s) error {\n", sf.Name, msgType)
 
 	resultTypes := map[string]string{}
+	varSources := map[string]varSource{}
 	for _, seq := range sf.Sequences {
 		if seq.Result != nil {
 			resultTypes[seq.Result.Var] = seq.Result.Type
+			if seq.Type == parser.SeqCall {
+				parts := strings.SplitN(seq.Model, ".", 2)
+				if len(parts) == 2 {
+					varSources[seq.Result.Var] = varSource{Kind: "func", ModelName: parts[1]}
+				}
+			} else {
+				varSources[seq.Result.Var] = varSource{Kind: "ddl", ModelName: seq.Result.Type}
+			}
 		}
 	}
+	resolver := &FieldTypeResolver{vars: varSources, st: st, fs: g.FuncSpecs}
 
 	useTx := hasWriteSequence(sf.Sequences)
 	if useTx {
@@ -179,7 +200,7 @@ func (g *GoTarget) generateSubscribeFunc(sf parser.ServiceFunc, st *validator.Sy
 	declaredVars := map[string]bool{}
 	usedVars := collectUsedVars(sf.Sequences)
 	for i, seq := range sf.Sequences {
-		data := buildTemplateData(seq, &errDeclared, declaredVars, resultTypes, st, sf.Name, useTx)
+		data := buildTemplateData(seq, &errDeclared, declaredVars, resultTypes, st, sf.Name, useTx, resolver)
 		if seq.Result != nil && !usedVars[seq.Result.Var] {
 			data.Unused = true
 			if data.ErrDeclared {

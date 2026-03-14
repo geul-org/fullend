@@ -21,7 +21,7 @@ Create 9 SSOTs in `specs/<project>/`:
 | 8 | OPA Rego | `policy/*.rego` | @ownership, allow rules |
 | 9 | Gherkin Scenario | `scenario/*.feature` | @scenario, @invariant |
 | 10 | STML | `frontend/*.html` | data-fetch, data-action, data-bind |
-| Optional | Func Spec | `func/<pkg>/*.go` | @func, Request/Response struct |
+| Optional | Func Spec | `func/<pkg>/*.go` | @func, Request/Response struct. Import path: `internal/<pkg>` (specs에서 artifacts로 복사됨) |
 
 ### fullend.yaml Optional Config
 

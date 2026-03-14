@@ -9,13 +9,16 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/geul-org/fullend/internal/funcspec"
 	"github.com/geul-org/fullend/internal/ssac/parser"
 	"github.com/geul-org/fullend/internal/ssac/validator"
 	"github.com/ettle/strcase"
 )
 
 // GoTarget은 Go 언어용 코드 생성기다.
-type GoTarget struct{}
+type GoTarget struct {
+	FuncSpecs []funcspec.FuncSpec
+}
 
 // FileExtension은 Go 파일 확장자를 반환한다.
 func (g *GoTarget) FileExtension() string { return ".go" }

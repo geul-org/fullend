@@ -61,7 +61,7 @@ type templateData struct {
 	ErrDeclared bool
 }
 
-func buildTemplateData(seq parser.Sequence, errDeclared *bool, declaredVars map[string]bool, resultTypes map[string]string, st *validator.SymbolTable, funcName string, useTx bool) templateData {
+func buildTemplateData(seq parser.Sequence, errDeclared *bool, declaredVars map[string]bool, resultTypes map[string]string, st *validator.SymbolTable, funcName string, useTx bool, resolver *FieldTypeResolver) templateData {
 	d := templateData{
 		Message: seq.Message,
 		Result:  seq.Result,
@@ -117,7 +117,13 @@ func buildTemplateData(seq parser.Sequence, errDeclared *bool, declaredVars map[
 	// Guard
 	d.Target = seq.Target
 	if seq.Type == parser.SeqEmpty || seq.Type == parser.SeqExists {
-		typeName := resultTypes[rootVar(seq.Target)]
+		typeName := ""
+		if resolver != nil && strings.Contains(seq.Target, ".") {
+			typeName = resolver.ResolveFieldType(seq.Target)
+		}
+		if typeName == "" {
+			typeName = resultTypes[rootVar(seq.Target)]
+		}
 		d.ZeroCheck, d.ExistsCheck = zeroValueChecks(typeName)
 	}
 
