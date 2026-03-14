@@ -1,4 +1,4 @@
-package gluegen
+package hurl
 
 import (
 	"fmt"
@@ -12,6 +12,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/jinzhu/inflection"
 
+	"github.com/geul-org/fullend/internal/genapi"
 	"github.com/geul-org/fullend/internal/policy"
 	"github.com/geul-org/fullend/internal/statemachine"
 	ssacparser "github.com/geul-org/fullend/internal/ssac/parser"
@@ -25,6 +26,12 @@ type scenarioStep struct {
 	Operation   *openapi3.Operation
 	PathDepth   int  // number of path segments (for ordering)
 	IsAuth      bool // register/login
+}
+
+// Generate creates Hurl smoke tests from parsed SSOTs.
+func Generate(parsed *genapi.ParsedSSOTs, cfg *genapi.GenConfig) error {
+	return generateHurlTests(parsed.OpenAPIDoc, cfg.ArtifactsDir, cfg.SpecsDir,
+		parsed.StateDiagrams, parsed.ServiceFuncs, parsed.Policies)
 }
 
 // generateHurlTests generates smoke.hurl from OpenAPI spec.
@@ -853,13 +860,11 @@ func sortDeletesByFK(steps []scenarioStep, specsDir string) []scenarioStep {
 	// e.g. lessons depends on courses (lessons.course_id → courses)
 	deps := make(map[string]map[string]bool)
 	for _, t := range tables {
-		for _, col := range t.Columns {
-			if col.FKTable != "" {
-				if deps[t.TableName] == nil {
-					deps[t.TableName] = make(map[string]bool)
-				}
-				deps[t.TableName][col.FKTable] = true
+		for _, fk := range t.FKTables {
+			if deps[t.TableName] == nil {
+				deps[t.TableName] = make(map[string]bool)
 			}
+			deps[t.TableName][fk] = true
 		}
 	}
 

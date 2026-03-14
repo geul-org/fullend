@@ -1,4 +1,4 @@
-package gluegen
+package gogin
 
 import (
 	"bufio"

@@ -66,12 +66,12 @@ func Status(root string, detected []DetectedSSOT) []StatusLine {
 			lines = append(lines, StatusLine{Kind: KindSTML, Path: relPath, Summary: summary})
 		case KindStates:
 			summary := "?"
-			if parsed.States != nil {
+			if parsed.StateDiagrams != nil {
 				totalTransitions := 0
-				for _, d := range parsed.States {
+				for _, d := range parsed.StateDiagrams {
 					totalTransitions += len(d.Transitions)
 				}
-				summary = fmt.Sprintf("%d diagrams, %d transitions", len(parsed.States), totalTransitions)
+				summary = fmt.Sprintf("%d diagrams, %d transitions", len(parsed.StateDiagrams), totalTransitions)
 			}
 			lines = append(lines, StatusLine{Kind: KindStates, Path: relPath, Summary: summary})
 		case KindPolicy:
@@ -91,17 +91,17 @@ func Status(root string, detected []DetectedSSOT) []StatusLine {
 			lines = append(lines, StatusLine{Kind: KindScenario, Path: relPath, Summary: fmt.Sprintf("%d hurl files", total)})
 		case KindFunc:
 			summary := "?"
-			if parsed.FuncSpecs != nil {
+			if parsed.ProjectFuncSpecs != nil {
 				stubs := 0
-				for _, s := range parsed.FuncSpecs {
+				for _, s := range parsed.ProjectFuncSpecs {
 					if !s.HasBody {
 						stubs++
 					}
 				}
 				if stubs > 0 {
-					summary = fmt.Sprintf("%d funcs (%d TODO)", len(parsed.FuncSpecs), stubs)
+					summary = fmt.Sprintf("%d funcs (%d TODO)", len(parsed.ProjectFuncSpecs), stubs)
 				} else {
-					summary = fmt.Sprintf("%d funcs", len(parsed.FuncSpecs))
+					summary = fmt.Sprintf("%d funcs", len(parsed.ProjectFuncSpecs))
 				}
 			}
 			lines = append(lines, StatusLine{Kind: KindFunc, Path: relPath, Summary: summary})

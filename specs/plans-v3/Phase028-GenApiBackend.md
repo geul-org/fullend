@@ -1,4 +1,4 @@
-# Phase028: genapi 인터페이스 분리 + gen 패키지 재구조화
+# Phase028: genapi 인터페이스 분리 + gen 패키지 재구조화 ✅ 완료
 
 ## 목표
 
@@ -42,18 +42,18 @@ import (
 // ParsedSSOTs holds all SSOT parsing results.
 // orchestrator.ParseAll() populates this; crosscheck and gen consume it.
 type ParsedSSOTs struct {
-    Config        *projectconfig.ProjectConfig
-    OpenAPIDoc    *openapi3.T
-    SymbolTable   *ssacvalidator.SymbolTable
-    ServiceFuncs  []ssacparser.ServiceFunc
-    STMLPages     []stmlparser.PageSpec
-    StateDiagrams []*statemachine.StateDiagram
-    Policies      []*policy.Policy
-    FuncSpecs     []funcspec.FuncSpec
-    PkgFuncSpecs  []funcspec.FuncSpec
-    HurlFiles     []string
-    ModelDir      string
-    StatesErr     error
+    Config           *projectconfig.ProjectConfig
+    OpenAPIDoc       *openapi3.T
+    SymbolTable      *ssacvalidator.SymbolTable
+    ServiceFuncs     []ssacparser.ServiceFunc
+    STMLPages        []stmlparser.PageSpec
+    StateDiagrams    []*statemachine.StateDiagram  // crosscheck 기존 필드명 유지
+    Policies         []*policy.Policy
+    ProjectFuncSpecs []funcspec.FuncSpec            // crosscheck 기존 필드명 유지
+    FullendPkgSpecs  []funcspec.FuncSpec            // crosscheck 기존 필드명 유지
+    HurlFiles        []string
+    ModelDir         string
+    StatesErr        error
 }
 
 // GenConfig holds generation settings (not parsing results).
@@ -63,11 +63,24 @@ type GenConfig struct {
     ModulePath   string
 }
 
+// STMLGenOutput holds STML generator output (not parse results).
+// Populated by orchestrator after stml.Generate(), consumed by react gen.
+type STMLGenOutput struct {
+    Deps     map[string]string // npm dependencies
+    Pages    []string          // page names
+    PageOps  map[string]string // page file → primary operationID
+}
+
 // Backend generates backend code from parsed SSOTs.
 type Backend interface {
     Generate(parsed *ParsedSSOTs, cfg *GenConfig) error
 }
 ```
+
+필드명 통일 원칙:
+- `StateDiagrams` (orchestrator의 `States` → 이름 변경) — crosscheck Check 함수 16개가 `input.StateDiagrams`를 참조하므로
+- `ProjectFuncSpecs`, `FullendPkgSpecs` — crosscheck에서 이 이름으로 참조
+- orchestrator `ParseAll()` 내부에서 `p.States = diagrams` → `p.StateDiagrams = diagrams`로 변경
 
 ### 2. 의존성 방향
 
@@ -76,7 +89,7 @@ genapi ← orchestrator   (ParseAll → *genapi.ParsedSSOTs 반환)
 genapi ← crosscheck     (Run 입력으로 사용)
 genapi ← gen            (오케스트레이터)
 genapi ← gen/gogin      (Backend 구현)
-genapi ← gen/react      (ParsedSSOTs 소비)
+genapi ← gen/react      (ParsedSSOTs + STMLGenOutput 소비)
 genapi ← gen/hurl       (ParsedSSOTs 소비)
 ```
 
@@ -86,7 +99,7 @@ genapi ← gen/hurl       (ParsedSSOTs 소비)
 
 ```
 internal/
-├── genapi/           # ParsedSSOTs, GenConfig, Backend interface
+├── genapi/           # ParsedSSOTs, GenConfig, STMLGenOutput, Backend interface
 ├── gen/
 │   ├── gen.go        # 오케스트레이터: selectBackend + react + hurl 호출
 │   ├── gogin/        # Go+Gin 백엔드 (Backend 구현)
@@ -100,7 +113,8 @@ internal/
 │   │   ├── attach.go
 │   │   ├── state.go
 │   │   ├── authz.go
-│   │   └── queryopts.go
+│   │   ├── queryopts.go
+│   │   └── queryopts_test.go
 │   ├── react/        # OpenAPI → React 프론트엔드 (백엔드 무관)
 │   │   └── react.go
 │   └── hurl/         # OpenAPI → Hurl smoke test (백엔드 무관)
@@ -123,6 +137,7 @@ internal/
 | `stategen.go` | `gen/gogin/state.go` | Go+Gin 상태 머신 코드 생성 |
 | `authzgen.go` | `gen/gogin/authz.go` | Go+Gin authz 패키지 생성 |
 | `queryopts.go` | `gen/gogin/queryopts.go` | Go+Gin QueryOpts 생성 |
+| `queryopts_test.go` | `gen/gogin/queryopts_test.go` | QueryOpts 테스트 |
 | `frontend.go` | `gen/react/react.go` | OpenAPI → React (백엔드 무관) |
 | `hurl.go` | `gen/hurl/hurl.go` | OpenAPI → Hurl (백엔드 무관) |
 | `hurl_util.go` | `gen/hurl/hurl_util.go` | Hurl 유틸 (백엔드 무관) |
@@ -143,14 +158,14 @@ import (
 )
 
 // Generate creates all artifacts from parsed SSOTs.
-func Generate(parsed *genapi.ParsedSSOTs, cfg *genapi.GenConfig) error {
+func Generate(parsed *genapi.ParsedSSOTs, cfg *genapi.GenConfig, stmlOut *genapi.STMLGenOutput) error {
     // 1. 백엔드 코드 생성
     backend := selectBackend(parsed.Config)
     if err := backend.Generate(parsed, cfg); err != nil {
         return err
     }
     // 2. React 프론트엔드 생성 (OpenAPI 계약 기반, 백엔드 무관)
-    if err := react.Generate(parsed, cfg); err != nil {
+    if err := react.Generate(parsed, cfg, stmlOut); err != nil {
         return err
     }
     // 3. Hurl smoke test 생성 (OpenAPI 계약 기반, 백엔드 무관)
@@ -181,6 +196,18 @@ func (g *GoGin) Generate(parsed *genapi.ParsedSSOTs, cfg *genapi.GenConfig) erro
     // domain/flat 분기, transformSource, collectModels 등 포함
     return nil
 }
+
+// GenerateStateMachines generates Go state machine packages.
+// orchestrator에서 직접 호출 (Backend.Generate와 별도 단계).
+func GenerateStateMachines(diagrams []*statemachine.StateDiagram, artifactsDir, modulePath string) error {
+    // gluegen.GenerateStateMachines 이동
+}
+
+// GenerateAuthzPackage copies .rego files for runtime loading.
+// orchestrator에서 직접 호출 (Backend.Generate와 별도 단계).
+func GenerateAuthzPackage(policies []*policy.Policy, artifactsDir string) error {
+    // gluegen.GenerateAuthzPackage 이동
+}
 ```
 
 ### 7. `internal/orchestrator/parsed.go` 변경
@@ -196,11 +223,20 @@ import "github.com/geul-org/fullend/internal/genapi"
 func ParseAll(root string, detected []DetectedSSOT, skip map[SSOTKind]bool) *genapi.ParsedSSOTs {
     p := &genapi.ParsedSSOTs{}
     // ... 기존 파싱 로직 동일
+    // 필드명 변경: p.States → p.StateDiagrams
+    // 필드명 변경: p.FuncSpecs → p.ProjectFuncSpecs
+    // 필드명 변경: p.PkgFuncSpecs → p.FullendPkgSpecs
     return p
 }
 ```
 
-### 8. `internal/crosscheck/crosscheck.go` 변경
+orchestrator 내부에서 `parsed.States` → `parsed.StateDiagrams` 등 필드 참조 변경 필요:
+- `validate.go`: `parsed.States` → `parsed.StateDiagrams`
+- `gen.go`: `parsed.States` → `parsed.StateDiagrams`
+- `status.go`: `parsed.States` → `parsed.StateDiagrams`
+- `chain.go`: `parsed.States` → `parsed.StateDiagrams`
+
+### 8. `internal/crosscheck/types.go` 변경
 
 `CrossValidateInput`의 파싱 관련 필드를 `*genapi.ParsedSSOTs` 임베딩으로 교체:
 
@@ -220,7 +256,24 @@ type CrossValidateInput struct {
 }
 ```
 
-기존 `input.OpenAPIDoc`, `input.ServiceFuncs` 등 접근은 임베딩으로 그대로 동작 — Check 함수 변경 없음.
+genapi.ParsedSSOTs의 필드명이 기존 CrossValidateInput과 동일하므로 (`OpenAPIDoc`, `SymbolTable`, `ServiceFuncs`, `StateDiagrams`, `Policies`, `HurlFiles`, `ProjectFuncSpecs`, `FullendPkgSpecs`), 임베딩으로 기존 Check 함수 16개는 **변경 없이 동작**.
+
+### 9. `internal/orchestrator/gen.go` 변경
+
+```go
+// 변경 전
+gluegen.Generate(input)
+gluegen.GenerateStateMachines(diagrams, artifactsDir, modulePath)
+gluegen.GenerateAuthzPackage(policies, artifactsDir)
+
+// 변경 후
+gen.Generate(parsed, cfg, stmlOut)
+gogin.GenerateStateMachines(parsed.StateDiagrams, artifactsDir, modulePath)
+gogin.GenerateAuthzPackage(parsed.Policies, artifactsDir)
+```
+
+GlueInput 구성 코드 제거. `parsed` (*genapi.ParsedSSOTs)를 직접 전달.
+STML gen 출력(`STMLDeps`, `STMLPages`, `STMLPageOps`)은 `genapi.STMLGenOutput`으로 묶어 전달.
 
 ---
 
@@ -228,25 +281,27 @@ type CrossValidateInput struct {
 
 | 파일 | 변경 |
 |---|---|
-| `internal/genapi/genapi.go` | 신규 — ParsedSSOTs, GenConfig, Backend interface |
+| `internal/genapi/genapi.go` | 신규 — ParsedSSOTs, GenConfig, STMLGenOutput, Backend interface |
 | `internal/gen/gen.go` | 신규 — 오케스트레이터 (selectBackend + react + hurl 호출) |
-| `internal/gen/gogin/gogin.go` | 신규 — GoGin struct, Generate 구현 |
+| `internal/gen/gogin/gogin.go` | 신규 — GoGin struct, Generate, GenerateStateMachines, GenerateAuthzPackage |
 | `internal/gen/gogin/*.go` | gluegen/에서 Go+Gin 전용 11개 파일 이동 |
-| `internal/gen/react/react.go` | gluegen/frontend.go 이동. 시그니처: GlueInput → ParsedSSOTs+GenConfig |
-| `internal/gen/hurl/hurl.go` | gluegen/hurl.go 이동. 시그니처: GlueInput → ParsedSSOTs+GenConfig |
+| `internal/gen/gogin/queryopts_test.go` | gluegen/queryopts_test.go 이동 |
+| `internal/gen/react/react.go` | gluegen/frontend.go 이동. 시그니처: (ParsedSSOTs, GenConfig, STMLGenOutput) |
+| `internal/gen/hurl/hurl.go` | gluegen/hurl.go 이동. 시그니처: (ParsedSSOTs, GenConfig) |
 | `internal/gen/hurl/hurl_util.go` | gluegen/hurl_util.go 이동 |
 | `internal/gluegen/` | 디렉토리 삭제 |
-| `internal/orchestrator/parsed.go` | ParsedSSOTs → genapi.ParsedSSOTs |
-| `internal/orchestrator/validate.go` | ParsedSSOTs 참조 변경 |
-| `internal/orchestrator/gen.go` | gluegen.Generate → gen.Generate 호출 변경 |
-| `internal/crosscheck/crosscheck.go` | CrossValidateInput에 genapi.ParsedSSOTs 임베딩 |
-| `internal/crosscheck/types.go` | import 추가 |
+| `internal/orchestrator/parsed.go` | ParsedSSOTs struct 삭제, genapi.ParsedSSOTs 사용. 필드명 변경 (States→StateDiagrams 등) |
+| `internal/orchestrator/validate.go` | parsed.States → parsed.StateDiagrams 등 필드 참조 변경 |
+| `internal/orchestrator/gen.go` | gluegen → gen/gogin 호출 변경. GlueInput 제거. STMLGenOutput 전달 |
+| `internal/orchestrator/status.go` | parsed.States → parsed.StateDiagrams 필드 참조 변경 |
+| `internal/orchestrator/chain.go` | parsed.States → parsed.StateDiagrams 필드 참조 변경 |
+| `internal/crosscheck/types.go` | CrossValidateInput에 genapi.ParsedSSOTs 임베딩. 중복 필드 제거, import 변경 |
 
 ## 변경하지 않는 파일
 
-- 기존 15개 crosscheck Check 함수 — `input.OpenAPIDoc` 등 접근 방식 임베딩으로 유지
+- crosscheck Check 함수 16개 + rules.go — `input.OpenAPIDoc`, `input.StateDiagrams` 등 접근 방식이 임베딩으로 유지
 - gogin/ 이동 파일의 내부 로직 — 시그니처만 GlueInput → ParsedSSOTs+GenConfig 변경
-- react, hurl 이동 파일의 내부 로직 — 시그니처만 GlueInput → ParsedSSOTs+GenConfig 변경
+- hurl 이동 파일의 내부 로직 — 시그니처만 GlueInput → ParsedSSOTs+GenConfig 변경
 
 ## 검증
 

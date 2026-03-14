@@ -49,7 +49,7 @@ func Chain(specsDir string, operationID string) ([]ChainLink, error) {
 	// Parse all available SSOTs once.
 	parsed := ParseAll(abs, detected, nil)
 
-	allFuncSpecs := append(parsed.FuncSpecs, parsed.PkgFuncSpecs...)
+	allFuncSpecs := append(parsed.ProjectFuncSpecs, parsed.FullendPkgSpecs...)
 
 	// Trace the chain.
 	var links []ChainLink
@@ -91,8 +91,8 @@ func Chain(specsDir string, operationID string) ([]ChainLink, error) {
 	}
 
 	// 5. StateDiagram — trace diagrams referenced by @state sequences
-	if matchedFunc != nil && parsed.States != nil {
-		stateLinks := traceStates(matchedFunc, parsed.States, abs)
+	if matchedFunc != nil && parsed.StateDiagrams != nil {
+		stateLinks := traceStates(matchedFunc, parsed.StateDiagrams, abs)
 		links = append(links, stateLinks...)
 	}
 

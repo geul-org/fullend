@@ -4,6 +4,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 
 	"github.com/geul-org/fullend/internal/funcspec"
+	"github.com/geul-org/fullend/internal/genapi"
 	"github.com/geul-org/fullend/internal/policy"
 	"github.com/geul-org/fullend/internal/projectconfig"
 	"github.com/geul-org/fullend/internal/statemachine"
@@ -12,28 +13,11 @@ import (
 	stmlparser "github.com/geul-org/fullend/internal/stml/parser"
 )
 
-// ParsedSSOTs holds the results of parsing all detected SSOTs once.
-// Consumers receive pointers to these results instead of re-parsing.
-type ParsedSSOTs struct {
-	Config       *projectconfig.ProjectConfig
-	OpenAPIDoc   *openapi3.T
-	SymbolTable  *ssacvalidator.SymbolTable
-	ServiceFuncs []ssacparser.ServiceFunc
-	STMLPages    []stmlparser.PageSpec
-	States       []*statemachine.StateDiagram
-	Policies     []*policy.Policy
-	FuncSpecs    []funcspec.FuncSpec // project func/
-	PkgFuncSpecs []funcspec.FuncSpec // fullend pkg/
-	HurlFiles    []string
-	ModelDir     string
-	StatesErr    error // parse error from statemachine.ParseDir
-}
-
 // ParseAll parses all detected SSOTs once and returns the cached results.
 // Errors during parsing are recorded in the returned slices (nil values
 // indicate parse failure). Skipped kinds are not parsed.
-func ParseAll(root string, detected []DetectedSSOT, skip map[SSOTKind]bool) *ParsedSSOTs {
-	p := &ParsedSSOTs{}
+func ParseAll(root string, detected []DetectedSSOT, skip map[SSOTKind]bool) *genapi.ParsedSSOTs {
+	p := &genapi.ParsedSSOTs{}
 
 	has := make(map[SSOTKind]DetectedSSOT)
 	for _, d := range detected {
@@ -78,7 +62,7 @@ func ParseAll(root string, detected []DetectedSSOT, skip map[SSOTKind]bool) *Par
 	if d, ok := has[KindStates]; ok && !skip[KindStates] {
 		diagrams, err := statemachine.ParseDir(d.Path)
 		if err == nil {
-			p.States = diagrams
+			p.StateDiagrams = diagrams
 		} else {
 			p.StatesErr = err
 		}
@@ -94,14 +78,14 @@ func ParseAll(root string, detected []DetectedSSOT, skip map[SSOTKind]bool) *Par
 	if d, ok := has[KindFunc]; ok && !skip[KindFunc] {
 		specs, err := funcspec.ParseDir(d.Path)
 		if err == nil {
-			p.FuncSpecs = specs
+			p.ProjectFuncSpecs = specs
 		}
 	}
 
 	// fullend built-in pkg/ specs.
 	if pkgRoot := findFullendPkgRoot(); pkgRoot != "" {
 		if specs, err := funcspec.ParseDir(pkgRoot); err == nil {
-			p.PkgFuncSpecs = specs
+			p.FullendPkgSpecs = specs
 		}
 	}
 

@@ -1,4 +1,4 @@
-package gluegen
+package hurl
 
 import (
 	"fmt"
@@ -7,6 +7,54 @@ import (
 	"github.com/ettle/strcase"
 	"github.com/getkin/kin-openapi/openapi3"
 )
+
+// getExtMap extracts a map extension value from an OpenAPI operation.
+func getExtMap(op *openapi3.Operation, key string) map[string]interface{} {
+	if op.Extensions == nil {
+		return nil
+	}
+	v, ok := op.Extensions[key]
+	if !ok {
+		return nil
+	}
+	m, ok := v.(map[string]interface{})
+	if ok {
+		return m
+	}
+	return nil
+}
+
+// getStr extracts a string value from a map with a default.
+func getStr(m map[string]interface{}, key, def string) string {
+	v, ok := m[key]
+	if !ok {
+		return def
+	}
+	s, ok := v.(string)
+	if ok {
+		return s
+	}
+	return def
+}
+
+// getStrSlice extracts a string slice from a map.
+func getStrSlice(m map[string]interface{}, key string) []string {
+	v, ok := m[key]
+	if !ok {
+		return nil
+	}
+	arr, ok := v.([]interface{})
+	if !ok {
+		return nil
+	}
+	var result []string
+	for _, item := range arr {
+		if s, ok := item.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result
+}
 
 // generateDummyValue returns a dummy value for a schema field based on type, format, and field name hints.
 func generateDummyValue(fieldName string, schema *openapi3.Schema, checkEnums map[string][]string) interface{} {

@@ -3,6 +3,7 @@ package crosscheck
 import (
 	"testing"
 
+	"github.com/geul-org/fullend/internal/genapi"
 	"github.com/geul-org/fullend/internal/policy"
 	ssacparser "github.com/geul-org/fullend/internal/ssac/parser"
 )
@@ -10,8 +11,10 @@ import (
 func TestRunRules_SkipRules(t *testing.T) {
 	// Minimal input that triggers "SSaC Queue" and "SSaC → Authz" rules.
 	input := &CrossValidateInput{
-		ServiceFuncs: []ssacparser.ServiceFunc{
-			{Name: "DummyFunc"},
+		ParsedSSOTs: &genapi.ParsedSSOTs{
+			ServiceFuncs: []ssacparser.ServiceFunc{
+				{Name: "DummyFunc"},
+			},
 		},
 	}
 
@@ -45,13 +48,15 @@ func containsQueueError(e CrossError) bool {
 
 func TestRunRules_SkipAll(t *testing.T) {
 	input := &CrossValidateInput{
-		ServiceFuncs: []ssacparser.ServiceFunc{
-			{Name: "DummyFunc"},
+		ParsedSSOTs: &genapi.ParsedSSOTs{
+			ServiceFuncs: []ssacparser.ServiceFunc{
+				{Name: "DummyFunc"},
+			},
+			Policies: []*policy.Policy{{
+				File:  "test.rego",
+				Rules: []policy.AllowRule{{Actions: []string{"Do"}, Resource: "r", RoleValue: "admin", SourceLine: 1}},
+			}},
 		},
-		Policies: []*policy.Policy{{
-			File:  "test.rego",
-			Rules: []policy.AllowRule{{Actions: []string{"Do"}, Resource: "r", RoleValue: "admin", SourceLine: 1}},
-		}},
 		Roles: []string{"admin"},
 	}
 

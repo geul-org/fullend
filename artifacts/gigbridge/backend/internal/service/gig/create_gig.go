@@ -11,17 +11,17 @@ func (h *Handler) CreateGig(c *gin.Context) {
 	currentUser := c.MustGet("currentUser").(*model.CurrentUser)
 
 	var req struct {
-		Title       string `json:"title"`
 		Description string `json:"description"`
 		Budget      int64  `json:"budget"`
+		Title       string `json:"title"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
-	title := req.Title
 	description := req.Description
 	budget := req.Budget
+	title := req.Title
 
 	tx, err := h.DB.BeginTx(c.Request.Context(), nil)
 	if err != nil {

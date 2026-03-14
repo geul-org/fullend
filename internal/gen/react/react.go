@@ -1,4 +1,4 @@
-package gluegen
+package react
 
 import (
 	"encoding/json"
@@ -10,7 +10,26 @@ import (
 
 	"github.com/ettle/strcase"
 	"github.com/getkin/kin-openapi/openapi3"
+
+	"github.com/geul-org/fullend/internal/genapi"
 )
+
+func lcFirst(s string) string {
+	return strcase.ToGoCamel(s)
+}
+
+// Generate creates React + Vite frontend from parsed SSOTs.
+func Generate(parsed *genapi.ParsedSSOTs, cfg *genapi.GenConfig, stmlOut *genapi.STMLGenOutput) error {
+	var deps map[string]string
+	var pages []string
+	var pageOps map[string]string
+	if stmlOut != nil {
+		deps = stmlOut.Deps
+		pages = stmlOut.Pages
+		pageOps = stmlOut.PageOps
+	}
+	return generateFrontendSetup(cfg.ArtifactsDir, parsed.OpenAPIDoc, deps, pages, pageOps)
+}
 
 // generateFrontendSetup creates React + Vite project files.
 func generateFrontendSetup(artifactsDir string, doc *openapi3.T, stmlDeps map[string]string, stmlPages []string, stmlPageOps map[string]string) error {

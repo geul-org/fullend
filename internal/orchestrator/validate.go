@@ -12,6 +12,7 @@ import (
 
 	"github.com/geul-org/fullend/internal/contract"
 	"github.com/geul-org/fullend/internal/crosscheck"
+	"github.com/geul-org/fullend/internal/genapi"
 	"github.com/geul-org/fullend/internal/funcspec"
 	"github.com/geul-org/fullend/internal/policy"
 	"github.com/geul-org/fullend/internal/projectconfig"
@@ -42,7 +43,7 @@ func Validate(root string, detected []DetectedSSOT, skipKinds ...map[SSOTKind]bo
 }
 
 // ValidateWith runs validation using pre-parsed SSOTs.
-func ValidateWith(root string, detected []DetectedSSOT, parsed *ParsedSSOTs, skip map[SSOTKind]bool) *reporter.Report {
+func ValidateWith(root string, detected []DetectedSSOT, parsed *genapi.ParsedSSOTs, skip map[SSOTKind]bool) *reporter.Report {
 	report := &reporter.Report{}
 
 	has := make(map[SSOTKind]DetectedSSOT)
@@ -122,7 +123,7 @@ func ValidateWith(root string, detected []DetectedSSOT, parsed *ParsedSSOTs, ski
 		case KindSTML:
 			report.Steps = append(report.Steps, validateSTML(root, parsed.STMLPages))
 		case KindStates:
-			report.Steps = append(report.Steps, validateStates(parsed.States, parsed.StatesErr))
+			report.Steps = append(report.Steps, validateStates(parsed.StateDiagrams, parsed.StatesErr))
 		case KindPolicy:
 			report.Steps = append(report.Steps, validatePolicy(parsed.Policies))
 		case KindScenario:
@@ -130,7 +131,7 @@ func ValidateWith(root string, detected []DetectedSSOT, parsed *ParsedSSOTs, ski
 			report.Steps = append(report.Steps, step)
 			parsed.HurlFiles = files
 		case KindFunc:
-			report.Steps = append(report.Steps, validateFunc(parsed.FuncSpecs))
+			report.Steps = append(report.Steps, validateFunc(parsed.ProjectFuncSpecs))
 		case KindModel:
 			report.Steps = append(report.Steps, validateModel(d.Path))
 		}
@@ -204,7 +205,7 @@ func runContractValidate(specsDir string) reporter.StepResult {
 	return step
 }
 
-func runCrossValidate(root string, parsed *ParsedSSOTs) reporter.StepResult {
+func runCrossValidate(root string, parsed *genapi.ParsedSSOTs) reporter.StepResult {
 	step := reporter.StepResult{Name: "Cross"}
 
 	// Require OpenAPI + DDL + SSaC for cross-validation.
@@ -245,23 +246,16 @@ func runCrossValidate(root string, parsed *ParsedSSOTs) reporter.StepResult {
 	}
 
 	input := &crosscheck.CrossValidateInput{
-		OpenAPIDoc:       parsed.OpenAPIDoc,
-		SymbolTable:      parsed.SymbolTable,
-		ServiceFuncs:     parsed.ServiceFuncs,
-		StateDiagrams:    parsed.States,
-		Policies:         parsed.Policies,
-		HurlFiles:        parsed.HurlFiles,
-		ProjectFuncSpecs: parsed.FuncSpecs,
-		FullendPkgSpecs:  parsed.PkgFuncSpecs,
-		DTOTypes:         dtoTypes,
-		Middleware:       middleware,
-		Archived:         archived,
-		Claims:           claims,
-		QueueBackend:     queueBackend,
-		AuthzPackage:     authzPackage,
-		SensitiveCols:    sensitiveCols,
-		NoSensitiveCols:  noSensitiveCols,
-		Roles:            roles,
+		ParsedSSOTs:     parsed,
+		DTOTypes:        dtoTypes,
+		Middleware:      middleware,
+		Archived:        archived,
+		Claims:          claims,
+		QueueBackend:    queueBackend,
+		AuthzPackage:    authzPackage,
+		SensitiveCols:   sensitiveCols,
+		NoSensitiveCols: noSensitiveCols,
+		Roles:           roles,
 	}
 
 	cerrs := crosscheck.Run(input)

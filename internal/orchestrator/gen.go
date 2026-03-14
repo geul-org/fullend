@@ -8,7 +8,9 @@ import (
 
 	"github.com/geul-org/fullend/internal/contract"
 	"github.com/geul-org/fullend/internal/funcspec"
-	"github.com/geul-org/fullend/internal/gluegen"
+	"github.com/geul-org/fullend/internal/gen"
+	"github.com/geul-org/fullend/internal/gen/gogin"
+	"github.com/geul-org/fullend/internal/genapi"
 	"github.com/geul-org/fullend/internal/policy"
 	"github.com/geul-org/fullend/internal/projectconfig"
 	"github.com/geul-org/fullend/internal/reporter"
@@ -256,7 +258,7 @@ func genOpenAPI(specsDir, artifactsDir string) reporter.StepResult {
 	return step
 }
 
-func genSSaC(profile *TargetProfile, specsDir, artifactsDir string, parsed *ParsedSSOTs) []reporter.StepResult {
+func genSSaC(profile *TargetProfile, specsDir, artifactsDir string, parsed *genapi.ParsedSSOTs) []reporter.StepResult {
 	var steps []reporter.StepResult
 
 	funcs := parsed.ServiceFuncs
@@ -296,7 +298,7 @@ func genSSaC(profile *TargetProfile, specsDir, artifactsDir string, parsed *Pars
 	}
 
 	if gt, ok := profile.Backend.(*ssacgenerator.GoTarget); ok {
-		gt.FuncSpecs = append(parsed.PkgFuncSpecs, parsed.FuncSpecs...)
+		gt.FuncSpecs = append(parsed.FullendPkgSpecs, parsed.ProjectFuncSpecs...)
 	}
 
 	step := reporter.StepResult{Name: "ssac-gen"}
@@ -335,10 +337,10 @@ func genSSaC(profile *TargetProfile, specsDir, artifactsDir string, parsed *Pars
 }
 
 // injectFuncErrStatusFromParsed uses pre-parsed func specs to inject @error annotations.
-func injectFuncErrStatusFromParsed(st *ssacvalidator.SymbolTable, parsed *ParsedSSOTs) {
+func injectFuncErrStatusFromParsed(st *ssacvalidator.SymbolTable, parsed *genapi.ParsedSSOTs) {
 	var allSpecs []funcspec.FuncSpec
-	allSpecs = append(allSpecs, parsed.PkgFuncSpecs...)
-	allSpecs = append(allSpecs, parsed.FuncSpecs...)
+	allSpecs = append(allSpecs, parsed.FullendPkgSpecs...)
+	allSpecs = append(allSpecs, parsed.ProjectFuncSpecs...)
 
 	for _, fs := range allSpecs {
 		if fs.ErrStatus == 0 || fs.Package == "" {
@@ -402,48 +404,27 @@ func genSTML(profile *TargetProfile, specsDir, artifactsDir string, pages []stml
 	return step, result.Dependencies, pageNames, pageOps
 }
 
-func genGlue(specsDir, artifactsDir string, has map[SSOTKind]DetectedSSOT, parsed *ParsedSSOTs, stmlDeps map[string]string, stmlPages []string, stmlPageOps map[string]string) reporter.StepResult {
+func genGlue(specsDir, artifactsDir string, has map[SSOTKind]DetectedSSOT, parsed *genapi.ParsedSSOTs, stmlDeps map[string]string, stmlPages []string, stmlPageOps map[string]string) reporter.StepResult {
 	step := reporter.StepResult{Name: "glue-gen"}
 
-	// Determine module path from fullend.yaml, fallback to directory-based.
 	modulePath := determineModulePath(specsDir, artifactsDir, parsed.Config)
 
-	// Extract claims, queue, and authz config from pre-parsed config.
-	var claims map[string]string
-	var queueBackend string
-	var authzPackage string
-	if parsed.Config != nil {
-		if parsed.Config.Backend.Auth != nil {
-			claims = parsed.Config.Backend.Auth.Claims
-		}
-		if parsed.Config.Queue != nil {
-			queueBackend = parsed.Config.Queue.Backend
-		}
-		if parsed.Config.Authz != nil {
-			authzPackage = parsed.Config.Authz.Package
-		}
-	}
-
-	input := &gluegen.GlueInput{
+	cfg := &genapi.GenConfig{
 		ArtifactsDir: artifactsDir,
 		SpecsDir:     specsDir,
 		ModulePath:   modulePath,
-		STMLDeps:     stmlDeps,
-		STMLPages:    stmlPages,
-		STMLPageOps:  stmlPageOps,
-		Claims:       claims,
-		QueueBackend: queueBackend,
-		AuthzPackage: authzPackage,
 	}
 
-	// Use pre-parsed data.
-	input.OpenAPIDoc = parsed.OpenAPIDoc
-	input.ServiceFuncs = parsed.ServiceFuncs
-	input.SymbolTable = parsed.SymbolTable
-	input.StateDiagrams = parsed.States
-	input.Policies = parsed.Policies
+	var stmlOut *genapi.STMLGenOutput
+	if stmlDeps != nil || stmlPages != nil || stmlPageOps != nil {
+		stmlOut = &genapi.STMLGenOutput{
+			Deps:    stmlDeps,
+			Pages:   stmlPages,
+			PageOps: stmlPageOps,
+		}
+	}
 
-	if err := gluegen.Generate(input); err != nil {
+	if err := gen.Generate(parsed, cfg, stmlOut); err != nil {
 		step.Status = reporter.Fail
 		step.Errors = append(step.Errors, fmt.Sprintf("glue-gen error: %v", err))
 		return step
@@ -475,10 +456,10 @@ func determineModulePath(specsDir, artifactsDir string, cfg *projectconfig.Proje
 	return base + "/backend"
 }
 
-func genStateMachines(specsDir, artifactsDir string, parsed *ParsedSSOTs) reporter.StepResult {
+func genStateMachines(specsDir, artifactsDir string, parsed *genapi.ParsedSSOTs) reporter.StepResult {
 	step := reporter.StepResult{Name: "state-gen"}
 
-	diagrams := parsed.States
+	diagrams := parsed.StateDiagrams
 	if diagrams == nil {
 		step.Status = reporter.Fail
 		step.Errors = append(step.Errors, "States parse failed")
@@ -491,7 +472,7 @@ func genStateMachines(specsDir, artifactsDir string, parsed *ParsedSSOTs) report
 	}
 
 	modulePath := determineModulePath(specsDir, artifactsDir, parsed.Config)
-	if err := gluegen.GenerateStateMachines(diagrams, artifactsDir, modulePath); err != nil {
+	if err := gogin.GenerateStateMachines(diagrams, artifactsDir, modulePath); err != nil {
 		step.Status = reporter.Fail
 		step.Errors = append(step.Errors, fmt.Sprintf("state-gen error: %v", err))
 		return step
@@ -502,7 +483,7 @@ func genStateMachines(specsDir, artifactsDir string, parsed *ParsedSSOTs) report
 	return step
 }
 
-func genAuthz(artifactsDir string, parsed *ParsedSSOTs) reporter.StepResult {
+func genAuthz(artifactsDir string, parsed *genapi.ParsedSSOTs) reporter.StepResult {
 	step := reporter.StepResult{Name: "authz-gen"}
 
 	policies := parsed.Policies
@@ -517,7 +498,7 @@ func genAuthz(artifactsDir string, parsed *ParsedSSOTs) reporter.StepResult {
 		return step
 	}
 
-	if err := gluegen.GenerateAuthzPackage(policies, artifactsDir); err != nil {
+	if err := gogin.GenerateAuthzPackage(policies, artifactsDir); err != nil {
 		step.Status = reporter.Fail
 		step.Errors = append(step.Errors, fmt.Sprintf("authz-gen error: %v", err))
 		return step
