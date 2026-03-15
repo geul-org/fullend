@@ -123,7 +123,7 @@ allow {
 ## 8. 개발 지침
 
 1. `artifacts/AGENTS.md`, `artifacts/manual-for-ai.md` 참고
-2. SSOT specs는 `specs/dummys/zenflow/`에 작성
+2. SSOT specs는 `specs/dummys/zenflow-tryNN/`에 작성 (tryNN은 시도 번호)
 3. 시작 시간을 기록하고 소요시간을 측정
 4. 더미 메일은 `artifacts/scripts/dummy-smtp.py` 사용, DB는 도커로 실행
 5. 다른 프로젝트를 참고하지 말고 매뉴얼만 숙지하고 개발
