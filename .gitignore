@@ -16,10 +16,6 @@ go.sum
 .DS_Store
 Thumbs.db
 
-# Generated artifacts (fullend gen output)
-artifacts/fullend/
-artifacts/zenflow/
-
 # Compiled binaries in artifacts
 artifacts/*/backend/server
 
