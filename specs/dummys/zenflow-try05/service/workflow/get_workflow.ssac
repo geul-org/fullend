@@ -1,0 +1,6 @@
+package service
+
+// @get Workflow wf = Workflow.FindByIDAndOrg({ID: request.id, OrgID: currentUser.OrgID})
+// @empty wf "Workflow not found" 404
+// @response { workflow: wf }
+func GetWorkflow() {}

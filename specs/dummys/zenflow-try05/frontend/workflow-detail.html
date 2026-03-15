@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>ZenFlow Workflow Detail</title></head>
+<body>
+  <div data-fetch="GetWorkflow" data-param-id="route.id">
+    <h2 data-bind="workflow.title"></h2>
+    <p data-bind="workflow.status"></p>
+    <p data-bind="workflow.trigger_event"></p>
+    <button data-action="ActivateWorkflow" data-param-id="route.id">Activate</button>
+    <button data-action="PauseWorkflow" data-param-id="route.id">Pause</button>
+    <button data-action="ArchiveWorkflow" data-param-id="route.id">Archive</button>
+    <button data-action="ExecuteWorkflow" data-param-id="route.id">Execute</button>
+  </div>
+  <form data-action="AddAction" data-param-id="route.id">
+    <input data-field="action_type" placeholder="Action Type" />
+    <input data-field="payload_template" placeholder="Payload Template" />
+    <input data-field="sequence_order" type="number" placeholder="Order" />
+    <button type="submit">Add Action</button>
+  </form>
+</body>
+</html>

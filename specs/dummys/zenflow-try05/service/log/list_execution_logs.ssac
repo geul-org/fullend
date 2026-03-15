@@ -1,0 +1,6 @@
+package service
+
+// @auth "ListExecutionLogs" "execution_log" {} "Not authorized" 403
+// @get []ExecutionLog logs = ExecutionLog.ListByOrg({OrgID: currentUser.OrgID})
+// @response { execution_logs: logs }
+func ListExecutionLogs() {}

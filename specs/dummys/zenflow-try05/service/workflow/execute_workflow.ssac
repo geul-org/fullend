@@ -1,0 +1,14 @@
+package service
+
+import "github.com/example/zenflow/internal/worker"
+
+// @auth "ExecuteWorkflow" "workflow" {ResourceID: request.id} "Not authorized" 403
+// @get Workflow wf = Workflow.FindByIDAndOrg({ID: request.id, OrgID: currentUser.OrgID})
+// @empty wf "Workflow not found" 404
+// @state workflow {status: wf.Status} "ExecuteWorkflow" "Workflow must be active" 409
+// @get []Action actions = Action.ListByWorkflow({WorkflowID: wf.ID})
+// @call worker.ProcessActionsResponse result = worker.ProcessActions({WorkflowID: wf.ID})
+// @put Organization.DeductOneCredit({ID: wf.OrgID})
+// @post ExecutionLog log = ExecutionLog.Create({WorkflowID: wf.ID, OrgID: wf.OrgID})
+// @response { execution_log: log }
+func ExecuteWorkflow() {}
